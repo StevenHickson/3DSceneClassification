@@ -161,23 +161,23 @@ void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud,
 		fprintf(fp,"%d,%f,%f,%f,%f,%f",(*p)->m_size,(*p)->m_centroid.x,(*p)->m_centroid.y,(*p)->m_centroid3D.x,(*p)->m_centroid3D.y,(*p)->m_centroid3D.z);
 		//LABXYZUVW *p1 = (*p)->m_hist;
 		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%d",(*p)->m_hist[k].a);
+			fprintf(fp,",%d",float((*p)->m_hist[k].a)/(*p)->m_size);
 		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%d",(*p)->m_hist[k].b);
+			fprintf(fp,",%d",float((*p)->m_hist[k].b)/(*p)->m_size);
 		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%d",(*p)->m_hist[k].l);
+			fprintf(fp,",%d",float((*p)->m_hist[k].l)/(*p)->m_size);
 		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].u);
+			fprintf(fp,",%f",(*p)->m_hist[k].u/(*p)->m_size);
 		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].v);
+			fprintf(fp,",%f",(*p)->m_hist[k].v/(*p)->m_size);
 		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].w);
+			fprintf(fp,",%f",(*p)->m_hist[k].w/(*p)->m_size);
 		for(k = 0; k < NUM_BINS_XYZ; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].x);
+			fprintf(fp,",%f",(*p)->m_hist[k].x/(*p)->m_size);
 		for(k = 0; k < NUM_BINS_XYZ; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].y);
+			fprintf(fp,",%f",(*p)->m_hist[k].y/(*p)->m_size);
 		for(k = 0; k < NUM_BINS_XYZ; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].z);
+			fprintf(fp,",%f",(*p)->m_hist[k].z/(*p)->m_size);
 		fprintf(fp,",%d\n",id);
 	}
 }
@@ -198,8 +198,9 @@ void BuildNYUDataset(string direc) {
 		}
 	}
 	fprintf(fp,",class\n");
-	pcl::visualization::PCLVisualizer viewer("New viewer");
-	for(int i = 1; i < 1450; i++) {
+	//pcl::visualization::PCLVisualizer viewer("New viewer");
+	for(int i = 1; i < 1438; i++) {
+		cout << i << endl;
 		stringstream num;
 		num << i;
 		img = imread(string(direc + "rgb\\" + num.str() + ".bmp"));
@@ -213,12 +214,12 @@ void BuildNYUDataset(string direc) {
 		tree.Create(cloud,labelCloud,*normals,segments,0);
 		tree.PropagateRegionHierarchy(75);
 		tree.ImplementSegmentation(0.4f);
-		viewer.removePointCloud("cloud");
+		/*viewer.removePointCloud("cloud");
 		viewer.removePointCloud("original");
 		viewer.addPointCloud(segment.makeShared(),"original");
 		viewer.addPointCloudNormals<pcl::PointXYZRGBA,pcl::PointNormal>(segment.makeShared(), normals);
 		while(1)
-			viewer.spinOnce();
+			viewer.spinOnce();*/
 		GetFeatureVectors(fp,tree,labelCloud,label);
 		//release stuff
 		segment.clear();
