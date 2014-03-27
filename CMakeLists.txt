@@ -46,4 +46,4 @@ include_directories(${3DSceneClassification_INCLUDE_DIRS})
 CUDA_ADD_LIBRARY(BuildGraph STATIC include/BuildGraph.h src/BuildGraph.cu)
 
 add_executable (3DSceneClassification ${3DSceneClassification_SOURCES} ${3DSceneClassification_HEADERS})
-target_link_libraries (3DSceneClassification BuildGraph ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${PCL_LIBRARIES} ${OpenCV_LIBS} Kinect10.lib debug Debug/PCL_WindowsKinectSDK optimized Release/PCL_WindowsKinectSDK)
+target_link_libraries (3DSceneClassification BuildGraph Shlwapi ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${PCL_LIBRARIES} ${OpenCV_LIBS} Kinect10.lib debug Debug/PCL_WindowsKinectSDK optimized Release/PCL_WindowsKinectSDK)

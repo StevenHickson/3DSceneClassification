@@ -108,35 +108,128 @@ void CreateLabeledCloudFromNYUPointCloud(const PointCloudBgr &cloud, const Mat &
 	labelCloud->sensor_orientation_.z () = 0.0;
 }
 
-inline void EstimateNormals(const PointCloud<PointXYZRGBA>::ConstPtr &cloud, PointCloud<PointNormal>::Ptr &normals) {
+inline void EstimateNormals(const PointCloud<PointXYZRGBA>::ConstPtr &cloud, PointCloud<PointNormal>::Ptr &normals, bool fill) {
 	pcl::IntegralImageNormalEstimation<pcl::PointXYZRGBA, pcl::PointNormal> ne;
 	ne.setNormalEstimationMethod (ne.AVERAGE_3D_GRADIENT);
 	ne.setMaxDepthChangeFactor(0.02f);
 	ne.setNormalSmoothingSize(10.0f);
 	ne.setInputCloud(cloud);
 	ne.compute(*normals);
+	if(fill) {
+		PointCloudNormal::iterator p = normals->begin();
+		while(p != normals->end()) {
+			if(_isnan(p->normal_x))
+				p->normal_x = 0;
+			if(_isnan(p->normal_y))
+				p->normal_y = 0;
+			if(_isnan(p->normal_z))
+				p->normal_z = 0;
+			++p;
+		}
+	}
+}
+
+inline int GetClass(const PointCloudInt &cloud, const Mat &labels, int id) {
+	int i, ret = 0;
+	int *lookup = new int[NUM_LABELS];
+	for(i = 0; i < NUM_LABELS; i++)
+		lookup[i] = 0;
+	PointCloudInt::const_iterator p = cloud.begin();
+	Mat_<int>::const_iterator pL = labels.begin<int>();
+	while(p != cloud.end()) {
+		if(p->intensity == id)
+			lookup[*pL]++;
+		++p; ++pL;
+	}
+	int max = lookup[0], maxLoc = 0;
+	for(i = 0; i < NUM_LABELS; i++) {
+		if(lookup[i] > max) {
+			max = lookup[i];
+			maxLoc = i;
+		}
+	}
+	delete[] lookup;
+	return maxLoc;
+}
+
+void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud, const Mat &label) {
+	//for each top level region, I need to give it a class name.
+	int k;
+	vector<Region3D*>::const_iterator p = tree.top_regions.begin();
+	for(int i = 0; i < tree.top_regions.size(); i++, p++) {
+		int id = GetClass(cloud,label,(*p)->m_centroid3D.intensity);
+		fprintf(fp,"%d,%f,%f,%f,%f,%f",(*p)->m_size,(*p)->m_centroid.x,(*p)->m_centroid.y,(*p)->m_centroid3D.x,(*p)->m_centroid3D.y,(*p)->m_centroid3D.z);
+		//LABXYZUVW *p1 = (*p)->m_hist;
+		for(k = 0; k < NUM_BINS; k++)
+			fprintf(fp,",%d",(*p)->m_hist[k].a);
+		for(k = 0; k < NUM_BINS; k++)
+			fprintf(fp,",%d",(*p)->m_hist[k].b);
+		for(k = 0; k < NUM_BINS; k++)
+			fprintf(fp,",%d",(*p)->m_hist[k].l);
+		for(k = 0; k < NUM_BINS; k++)
+			fprintf(fp,",%f",(*p)->m_hist[k].u);
+		for(k = 0; k < NUM_BINS; k++)
+			fprintf(fp,",%f",(*p)->m_hist[k].v);
+		for(k = 0; k < NUM_BINS; k++)
+			fprintf(fp,",%f",(*p)->m_hist[k].w);
+		for(k = 0; k < NUM_BINS_XYZ; k++)
+			fprintf(fp,",%f",(*p)->m_hist[k].x);
+		for(k = 0; k < NUM_BINS_XYZ; k++)
+			fprintf(fp,",%f",(*p)->m_hist[k].y);
+		for(k = 0; k < NUM_BINS_XYZ; k++)
+			fprintf(fp,",%f",(*p)->m_hist[k].z);
+		fprintf(fp,",%d\n",id);
+	}
 }
 
 void BuildNYUDataset(string direc) {
+	srand(time(NULL));
 	PointCloudBgr cloud,segment;
 	PointCloudInt labelCloud;
 	Mat img, depth, label;
-	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > normals;
+	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > normals(new pcl::PointCloud<pcl::PointNormal>);
+	FILE *fp = fopen("features.txt","w");
+	if(fp == NULL)
+		throw exception("Couldn't open features file");
+	fprintf(fp,"size,cx,cy,c3x,c3y,c3z");
+	for(int j = 0; j < 9; j++) {
+		for(int k = 0; k < (j < 6 ? NUM_BINS : NUM_BINS_XYZ); k++) {
+			fprintf(fp,",h%d_%d",j,k);
+		}
+	}
+	fprintf(fp,",class\n");
+	pcl::visualization::PCLVisualizer viewer("New viewer");
 	for(int i = 1; i < 1450; i++) {
 		stringstream num;
 		num << i;
 		img = imread(string(direc + "rgb\\" + num.str() + ".bmp"));
 		depth = imread_depth(string(direc + "depth\\" + num.str() + ".dep").c_str(),true);
-		label = imread_depth(string(direc + "labels\\" + num.str() + ".bmp").c_str(),true);
+		label = imread_depth(string(direc + "labels\\" + num.str() + ".dep").c_str(),true);
 		CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
 		//CreateLabeledCloudFromNYUPointCloud(cloud,label,&labelCloud);
-		int segments = SHGraphSegment(cloud,2.5f,500.0f,200,0.8f,200.0f,200,&labelCloud,&segment);
-		EstimateNormals(cloud.makeShared(),normals);
+		int segments = SHGraphSegment(cloud,2.5f,400.0f,100,0.8f,100.0f,75,&labelCloud,&segment);
+		EstimateNormals(cloud.makeShared(),normals,true);
 		RegionTree3D tree;
-		tree.Create(cloud,labelCloud,segments,0);
-		tree.PropagateRegionHierarchy(100);
-		tree.ImplementSegmentation(0.45f);
+		tree.Create(cloud,labelCloud,*normals,segments,0);
+		tree.PropagateRegionHierarchy(75);
+		tree.ImplementSegmentation(0.4f);
+		viewer.removePointCloud("cloud");
+		viewer.removePointCloud("original");
+		viewer.addPointCloud(segment.makeShared(),"original");
+		viewer.addPointCloudNormals<pcl::PointXYZRGBA,pcl::PointNormal>(segment.makeShared(), normals);
+		while(1)
+			viewer.spinOnce();
+		GetFeatureVectors(fp,tree,labelCloud,label);
+		//release stuff
 		segment.clear();
-
+		cloud.clear();
+		labelCloud.clear();
+		img.release();
+		depth.release();
+		label.release();
+		normals->clear();
+		tree.top_regions.clear();
+		tree.Release();
 	}
+	fclose(fp);
 }
