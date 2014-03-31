@@ -148,24 +148,42 @@ inline int GetClass(const PointCloudInt &cloud, const Mat &labels, int id) {
 			maxLoc = i;
 		}
 	}
-	delete[] lookup;
+	try {
+		delete[] lookup;
+	} catch(...) {
+		cout << "small error here" << endl;
+	}
 	return maxLoc;
 }
 
-void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud, const Mat &label) {
+inline float HistTotal(LABXYZUVW *hist) {
+	float tot = 0.0f;
+	for(int k = 0; k < NUM_BINS; k++) {
+		tot += hist[k].u;
+	}
+	return tot;
+}
+
+void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud, const Mat &label, const int numImage) {
 	//for each top level region, I need to give it a class name.
 	int k;
 	vector<Region3D*>::const_iterator p = tree.top_regions.begin();
 	for(int i = 0; i < tree.top_regions.size(); i++, p++) {
+		/*cout << i << endl;
+		if(i == 51)
+			cout << "This is where it breaks" << endl;*/
 		int id = GetClass(cloud,label,(*p)->m_centroid3D.intensity);
 		fprintf(fp,"%d,%f,%f,%f,%f,%f",(*p)->m_size,(*p)->m_centroid.x,(*p)->m_centroid.y,(*p)->m_centroid3D.x,(*p)->m_centroid3D.y,(*p)->m_centroid3D.z);
+		float a = ((*p)->m_max3D.x - (*p)->m_min3D.x), b = ((*p)->m_max3D.y - (*p)->m_min3D.y), c = ((*p)->m_max3D.z - (*p)->m_min3D.z);
+		fprintf(fp,",%f,%f,%f,%f,%f,%f,%f,%f",(*p)->m_min3D.x,(*p)->m_min3D.y,(*p)->m_min3D.z,(*p)->m_max3D.x,(*p)->m_max3D.y,(*p)->m_max3D.z,(*p)->m_max3D.z,sqrt(a*a + c*c),b);
 		//LABXYZUVW *p1 = (*p)->m_hist;
+		//float tot = HistTotal((*p)->m_hist);
 		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%d",float((*p)->m_hist[k].a)/(*p)->m_size);
+			fprintf(fp,",%f",float((*p)->m_hist[k].a)/(*p)->m_size);
 		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%d",float((*p)->m_hist[k].b)/(*p)->m_size);
+			fprintf(fp,",%f",float((*p)->m_hist[k].b)/(*p)->m_size);
 		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%d",float((*p)->m_hist[k].l)/(*p)->m_size);
+			fprintf(fp,",%f",float((*p)->m_hist[k].l)/(*p)->m_size);
 		for(k = 0; k < NUM_BINS; k++)
 			fprintf(fp,",%f",(*p)->m_hist[k].u/(*p)->m_size);
 		for(k = 0; k < NUM_BINS; k++)
@@ -178,7 +196,7 @@ void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud,
 			fprintf(fp,",%f",(*p)->m_hist[k].y/(*p)->m_size);
 		for(k = 0; k < NUM_BINS_XYZ; k++)
 			fprintf(fp,",%f",(*p)->m_hist[k].z/(*p)->m_size);
-		fprintf(fp,",%d\n",id);
+		fprintf(fp,",%d,%d\n",numImage,id);
 	}
 }
 
@@ -191,15 +209,15 @@ void BuildNYUDataset(string direc) {
 	FILE *fp = fopen("features.txt","w");
 	if(fp == NULL)
 		throw exception("Couldn't open features file");
-	fprintf(fp,"size,cx,cy,c3x,c3y,c3z");
+	fprintf(fp,"size,cx,cy,c3x,c3y,c3z,minx,miny,minz,maxx,maxy,maxz,xdist,ydist");
 	for(int j = 0; j < 9; j++) {
 		for(int k = 0; k < (j < 6 ? NUM_BINS : NUM_BINS_XYZ); k++) {
 			fprintf(fp,",h%d_%d",j,k);
 		}
 	}
-	fprintf(fp,",class\n");
+	fprintf(fp,",frame,class\n");
 	//pcl::visualization::PCLVisualizer viewer("New viewer");
-	for(int i = 1; i < 1438; i++) {
+	for(int i = 1; i < 1450; i++) {
 		cout << i << endl;
 		stringstream num;
 		num << i;
@@ -209,7 +227,7 @@ void BuildNYUDataset(string direc) {
 		CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
 		//CreateLabeledCloudFromNYUPointCloud(cloud,label,&labelCloud);
 		int segments = SHGraphSegment(cloud,2.5f,400.0f,100,0.8f,100.0f,75,&labelCloud,&segment);
-		EstimateNormals(cloud.makeShared(),normals,true);
+		EstimateNormals(cloud.makeShared(),normals,false);
 		RegionTree3D tree;
 		tree.Create(cloud,labelCloud,*normals,segments,0);
 		tree.PropagateRegionHierarchy(75);
@@ -220,7 +238,7 @@ void BuildNYUDataset(string direc) {
 		viewer.addPointCloudNormals<pcl::PointXYZRGBA,pcl::PointNormal>(segment.makeShared(), normals);
 		while(1)
 			viewer.spinOnce();*/
-		GetFeatureVectors(fp,tree,labelCloud,label);
+		GetFeatureVectors(fp,tree,labelCloud,label,i);
 		//release stuff
 		segment.clear();
 		cloud.clear();
