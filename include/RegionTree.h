@@ -40,11 +40,13 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 #define HIST_MUL_Y 7.5f
 //RANGE = 0 - 6
 #define HIST_MUL_Z 5.0f
-//RANGE = -0.2 - 0.2
-#define HIST_MUL_OF 50.0f //might need one of these just for w.
+//RANGE = -1 - 1
+#define HIST_MUL_N 10.0f //might need one of these just for w.
 
 //Modifier for Depth in Histogram Difference
-#define HIST_DEPTH_MOD 1.5f
+#define HIST_DEPTH_MOD 1.0f
+#define HIST_NORMAL_MOD 0.75f
+#define HIST_COLOR_MOD 1.25f
 
 #define SIZE_MUL 0.5f
 #define CENTROID_MUL 50
@@ -94,16 +96,6 @@ public:
 	LABXYZ(int r_val, int g_val, int b_val, float x_val, float y_val, float z_val);
 };
 
-class LABXYZLMN {
-public:
-	int l, a, b;
-	float x, y, z, l, m, n;
-
-	LABXYZLMN() : l(0), a(0), b(0), x(0.0f), y(0.0f), z(0.0f), l(0.0f), m(0.0f), n(0.0f) { }
-	//LABD(int l_val, int a_val, int b_val, float d_val) : l(l_val), a(a_val), b(b_val), d(d_val) { }
-	LABXYZLMN(int r_val, int g_val, int b_val, float x_val, float y_val, float z_val, float l_val, float m_val, float n_val);
-};
-
 class Region3D {
 public:
 	Region3D() : m_numRegions(0), m_level(0), m_size(0), m_hist(NULL) { m_regions[0] = NULL; m_regions[1] = NULL; };
@@ -114,13 +106,13 @@ public:
 	unsigned int m_size; //Size of my region
 	//int m_label; //region label
 	cv::Point2f m_centroid; //if m_leaf 2D location, else centroid
-	pcl::PointXYZI m_centroid3D; //if a leaf (level 1), 3D location and value, else centroid and label
-	LABXYZLMN *m_hist;
+	pcl::PointXYZI m_centroid3D, m_min3D, m_max3D; //if a leaf (level 1), 3D location and value, else centroid and label
+	LABXYZUVW *m_hist;
 	std::vector<int> m_neighbors; //neighboring regions
 
-	inline void InitializeRegion(pcl::PointXYZI *in, cv::Vec3b &color, const int label, const int i, const int j, const int level);
+	inline void InitializeRegion(pcl::PointXYZI *in, cv::Vec3b &color, const pcl::PointNormal &normal, int label, const int i, const int j, const int level);
 	inline void InitializeRegion(Region3D *node1, Region3D *node2, int level, int min_size);
-	inline void AddNode(pcl::PointXYZI *in, cv::Vec3b &color, const int i, const int j);
+	inline void AddNode(pcl::PointXYZI *in, cv::Vec3b &color, const pcl::PointNormal &normal, const int i, const int j);
 
 	bool operator<(const Region3D &other) const {
 		return m_centroid3D.intensity < other.m_centroid3D.intensity;
@@ -153,6 +145,7 @@ public:
 	T** m_nodes;
 	//T *region_list;
 	std::vector<T*> region_list;
+	std::vector<T*> top_regions;
 	int m_size,m_width,m_height;
 	bool m_propagated;
 	int numRegions, totRegions; //temporary, lets add every time we new
@@ -184,7 +177,6 @@ public:
 		m_propagated = false;
 	}
 
-	//void Create(const ColorContainer &in, LabelContainer &labels, int num_segments, int start_label);
 	void Create(const ColorContainer &in, LabelContainer &labels, const pcl::PointCloud<pcl::PointNormal> &normals, int num_segments, int start_label);
 	void TemporalCorrection(RegionTreeType<T,HistContainer,ColorContainer,LabelContainer> &past, int level);
 	void PropagateRegionHierarchy(int min_size = 0);
@@ -205,6 +197,6 @@ public:
 	}
 };
 
-typedef RegionTreeType<Region3D,LABXYZ,pcl::PointCloud<pcl::PointXYZRGBA>,pcl::PointCloud<pcl::PointXYZI> > RegionTree3D;
+typedef RegionTreeType<Region3D,LABXYZUVW,pcl::PointCloud<pcl::PointXYZRGBA>,pcl::PointCloud<pcl::PointXYZI> > RegionTree3D;
 
 #endif //REGION_TREE_H
