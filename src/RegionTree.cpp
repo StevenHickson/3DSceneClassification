@@ -371,18 +371,18 @@ void RegionTree3D::Create(const PointCloudBgr &in, PointCloudInt &labels, const 
 	delete[] lookup;
 }
 
-void SetBranch(RegionTree3D *tree, Region3D* region, int level, int label) {
+void RegionTree3D::SetBranch(Region3D* region, int level, int label) {
 	assert(region != NULL);
 	if(label == -1 && region->m_level <= level) {
 		//I should set the label
 		label = region->m_centroid3D.intensity;
-		tree->top_regions.push_back(region);
+		top_regions.push_back(region);
 	}
 	if(region->m_numRegions != 0 && region->m_regions != NULL && region->m_regions[0] != NULL && region->m_regions[1] != NULL) {
 		//I am not at the leaf level, tell my children to do proper
 		Region3D **branch = region->m_regions;
 		for(int i = 0; i < region->m_numRegions; i++) {
-			SetBranch(tree, *branch,level, label);
+			SetBranch(*branch,level, label);
 			branch++;
 		}
 	} else {
@@ -403,7 +403,7 @@ void RegionTree3D::UpdateCloud(int level) {
 	int i;
 	Region3D** branch = m_nodes;
 	for(i = 0; i < m_size; i++) {
-		SetBranch(this, *branch, level, -1);
+		SetBranch(*branch, level, -1);
 		branch++;
 	}
 }

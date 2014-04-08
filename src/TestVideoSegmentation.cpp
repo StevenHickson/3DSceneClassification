@@ -20,6 +20,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
 
 #include "TestVideoSegmentation.h"
+void BuildRFClassifier(std::string direc);
+void TestRFClassifier(std::string direc);
 
 using namespace std;
 using namespace pcl;
@@ -265,12 +267,15 @@ int main (int argc, char** argv) {
 	try {
 		//SimpleSegmentViewer v;
 		//v.run();
-		BuildNYUDataset(string(argv[1]));
+		//BuildNYUDataset(string(argv[1]));
+		BuildRFClassifier(string(argv[1]));
+		TestRFClassifier(string(argv[1]));
 	} catch (pcl::PCLException e) {
 		cout << e.detailedMessage() << endl;
 	} catch (std::exception &e) {
 		cout << e.what() << endl;
 	}
+	cout << "Done" << endl;
 	cin.get();
 	return 0;
 }

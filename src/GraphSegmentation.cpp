@@ -801,10 +801,10 @@ int Segment3D::AddSlice(
 			pO->intensity = segment;
 			++pI; ++pO; ++i;
 		}
-		currTree.Create(in,*out,currU_C.num_sets(),m_maxLabel);
+		/*currTree.Create(in,*out,currU_C.num_sets(),m_maxLabel);
 		currTree.PropagateRegionHierarchy(75);
 		currTree.ImplementSegmentation(TREE_LEVEL);
-		m_maxLabel += currU_C.num_sets();
+		m_maxLabel += currU_C.num_sets();*/
 		m_count++;
 		/*Merge();
 		prevTree.Release();

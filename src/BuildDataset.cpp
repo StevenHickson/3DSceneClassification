@@ -1,5 +1,7 @@
 #include "TestVideoSegmentation.h"
 
+const float parameters[] = { 2.0f,150.0f,75,0.5f,50.0f,50,50,0.2f };
+
 using namespace std;
 using namespace pcl;
 using namespace cv;
@@ -171,7 +173,7 @@ void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud,
 	for(int i = 0; i < tree.top_regions.size(); i++, p++) {
 		/*cout << i << endl;
 		if(i == 51)
-			cout << "This is where it breaks" << endl;*/
+		cout << "This is where it breaks" << endl;*/
 		int id = GetClass(cloud,label,(*p)->m_centroid3D.intensity);
 		fprintf(fp,"%d,%f,%f,%f,%f,%f",(*p)->m_size,(*p)->m_centroid.x,(*p)->m_centroid.y,(*p)->m_centroid3D.x,(*p)->m_centroid3D.y,(*p)->m_centroid3D.z);
 		float a = ((*p)->m_max3D.x - (*p)->m_min3D.x), b = ((*p)->m_max3D.y - (*p)->m_min3D.y), c = ((*p)->m_max3D.z - (*p)->m_min3D.z);
@@ -200,55 +202,258 @@ void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud,
 	}
 }
 
+void GetMatFromRegion(Region3D *reg, vector<float> &sample, int sample_size) {
+	int k;
+	sample.resize(sample_size);
+	vector<float>::iterator p = sample.begin();
+	*p++ = float(reg->m_size);
+	*p++ = reg->m_centroid.x;
+	*p++ = reg->m_centroid.y;
+	*p++ = reg->m_centroid3D.x;
+	*p++ = reg->m_centroid3D.y;
+	*p++ = reg->m_centroid3D.z;
+	float a = (reg->m_max3D.x - reg->m_min3D.x), b = (reg->m_max3D.y - reg->m_min3D.y), c = (reg->m_max3D.z - reg->m_min3D.z);
+	*p++ = reg->m_min3D.x;
+	*p++ = reg->m_min3D.y;
+	*p++ = reg->m_min3D.z;
+	*p++ = reg->m_max3D.x;
+	*p++ = reg->m_max3D.y;
+	*p++ = reg->m_max3D.z;
+	*p++ = reg->m_max3D.z;
+	*p++ = sqrt(a*a+c*c);
+	*p++ = b;
+	for(k = 0; k < NUM_BINS; k++)
+		*p++ = reg->m_hist[k].a / reg->m_size;
+	for(k = 0; k < NUM_BINS; k++)
+		*p++ = reg->m_hist[k].b / reg->m_size;
+	for(k = 0; k < NUM_BINS; k++)
+		*p++ = reg->m_hist[k].l / reg->m_size;
+	for(k = 0; k < NUM_BINS; k++)
+		*p++ = reg->m_hist[k].u / reg->m_size;
+	for(k = 0; k < NUM_BINS; k++)
+		*p++ = reg->m_hist[k].v / reg->m_size;
+	for(k = 0; k < NUM_BINS; k++)
+		*p++ = reg->m_hist[k].w / reg->m_size;
+	for(k = 0; k < NUM_BINS_XYZ; k++)
+		*p++ = reg->m_hist[k].x / reg->m_size;
+	for(k = 0; k < NUM_BINS_XYZ; k++)
+		*p++ = reg->m_hist[k].y / reg->m_size;
+	for(k = 0; k < NUM_BINS_XYZ; k++)
+		*p++ = reg->m_hist[k].z / reg->m_size;
+}
+
 void BuildNYUDataset(string direc) {
 	srand(time(NULL));
 	PointCloudBgr cloud,segment;
 	PointCloudInt labelCloud;
 	Mat img, depth, label;
 	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > normals(new pcl::PointCloud<pcl::PointNormal>);
-	FILE *fp = fopen("features.txt","w");
+	//open training file
+	FILE *fp = fopen("training_ind.txt","rb");
 	if(fp == NULL)
-		throw exception("Couldn't open features file");
-	fprintf(fp,"size,cx,cy,c3x,c3y,c3z,minx,miny,minz,maxx,maxy,maxz,xdist,ydist");
-	for(int j = 0; j < 9; j++) {
-		for(int k = 0; k < (j < 6 ? NUM_BINS : NUM_BINS_XYZ); k++) {
-			fprintf(fp,",h%d_%d",j,k);
-		}
-	}
-	fprintf(fp,",frame,class\n");
-	//pcl::visualization::PCLVisualizer viewer("New viewer");
-	for(int i = 1; i < 1450; i++) {
-		cout << i << endl;
-		stringstream num;
-		num << i;
-		img = imread(string(direc + "rgb\\" + num.str() + ".bmp"));
-		depth = imread_depth(string(direc + "depth\\" + num.str() + ".dep").c_str(),true);
-		label = imread_depth(string(direc + "labels\\" + num.str() + ".dep").c_str(),true);
-		CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
-		//CreateLabeledCloudFromNYUPointCloud(cloud,label,&labelCloud);
-		int segments = SHGraphSegment(cloud,2.5f,400.0f,100,0.8f,100.0f,75,&labelCloud,&segment);
-		EstimateNormals(cloud.makeShared(),normals,false);
-		RegionTree3D tree;
-		tree.Create(cloud,labelCloud,*normals,segments,0);
-		tree.PropagateRegionHierarchy(75);
-		tree.ImplementSegmentation(0.4f);
-		/*viewer.removePointCloud("cloud");
-		viewer.removePointCloud("original");
-		viewer.addPointCloud(segment.makeShared(),"original");
-		viewer.addPointCloudNormals<pcl::PointXYZRGBA,pcl::PointNormal>(segment.makeShared(), normals);
-		while(1)
-			viewer.spinOnce();*/
-		GetFeatureVectors(fp,tree,labelCloud,label,i);
-		//release stuff
-		segment.clear();
-		cloud.clear();
-		labelCloud.clear();
-		img.release();
-		depth.release();
-		label.release();
-		normals->clear();
-		tree.top_regions.clear();
-		tree.Release();
+		throw exception("Couldn't open training file");
+	int length, i;
+	fread(&length,sizeof(int),1,fp);
+	deque<int> trainingInds;
+	trainingInds.resize(length);
+	for(i = 0; i < length; i++) {
+		int tmp;
+		fread(&tmp,sizeof(int),1,fp);
+		trainingInds[i] = tmp;
 	}
 	fclose(fp);
+	fp = fopen("features.txt","wb");
+	if(fp == NULL)
+		throw exception("Couldn't open features file");
+	/*fprintf(fp,"size,cx,cy,c3x,c3y,c3z,minx,miny,minz,maxx,maxy,maxz,xdist,ydist");
+	for(int j = 0; j < 9; j++) {
+	for(int k = 0; k < (j < 6 ? NUM_BINS : NUM_BINS_XYZ); k++) {
+	fprintf(fp,",h%d_%d",j,k);
+	}
+	}
+	fprintf(fp,",frame,class\n");*/
+	//pcl::visualization::PCLVisualizer viewer("New viewer");
+	for(i = 1; i < 1450; i++) {
+		if(i == trainingInds.front()) {
+			trainingInds.pop_front();
+			cout << i << endl;
+			stringstream num;
+			num << i;
+			img = imread(string(direc + "rgb\\" + num.str() + ".bmp"));
+			depth = imread_depth(string(direc + "depth\\" + num.str() + ".dep").c_str(),true);
+			label = imread_depth(string(direc + "labels\\" + num.str() + ".dep").c_str(),true);
+			CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
+			//CreateLabeledCloudFromNYUPointCloud(cloud,label,&labelCloud);
+			int segments = SHGraphSegment(cloud,parameters[0],parameters[1],parameters[2],parameters[3],parameters[4],parameters[5],&labelCloud,&segment);
+			EstimateNormals(cloud.makeShared(),normals,false);
+			RegionTree3D tree;
+			tree.Create(cloud,labelCloud,*normals,segments,0);
+			tree.PropagateRegionHierarchy(parameters[6]);
+			tree.ImplementSegmentation(parameters[7]);
+			/*viewer.removePointCloud("cloud");
+			viewer.removePointCloud("original");
+			viewer.addPointCloud(segment.makeShared(),"original");
+			viewer.addPointCloudNormals<pcl::PointXYZRGBA,pcl::PointNormal>(segment.makeShared(), normals);
+			while(1)
+			viewer.spinOnce();*/
+			GetFeatureVectors(fp,tree,labelCloud,label,i);
+			//release stuff
+			segment.clear();
+			cloud.clear();
+			labelCloud.clear();
+			img.release();
+			depth.release();
+			label.release();
+			normals->clear();
+			tree.top_regions.clear();
+			tree.Release();
+		}
+	}
+	fclose(fp);
+}
+
+void BuildRFClassifier(string direc) {
+	FILE *fp = fopen("features.txt","rb");
+	if(fp == NULL)
+		throw exception("Couldn't open features file");
+	int i,j,tmp,num = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ;
+	vector<vector<float>> features;
+	vector<int> labels;
+	features.reserve(200000);
+	labels.reserve(200000);
+	while(!feof(fp)) {
+		vector<float> feature_vec;
+		feature_vec.resize(num);
+		fscanf(fp,"%d",&tmp);
+		feature_vec[0] = float(tmp);
+		for(i = 1; i < num; i++) {
+			float tmp_f;
+			fscanf(fp,",%f",&tmp_f);
+			feature_vec[i] = tmp_f;
+		}
+		fscanf(fp,",%d",&tmp);
+		fscanf(fp,",%d\n",&tmp);
+		labels.push_back(tmp);
+		features.push_back(feature_vec);
+	}
+	fclose(fp);
+	//we should convert this to Mats
+	Mat labelMat = Mat(labels);
+	labels.clear();
+	Mat featureMat = Mat(features.size(),num,CV_32F);
+	float *p = (float *)featureMat.data;
+	vector<vector<float>>::iterator pI = features.begin();
+	for(i=0;i<features.size();i++) {
+		vector<float> pTmp = *pI;
+		for(j=0;j<num;j++) {
+			*p = pTmp[j];
+			//assert(*p == featureMat.at<float>(i,j));
+			++p;
+		}
+		pTmp.clear();
+	}
+	features.clear();
+
+	// define all the attributes as numerical
+	// alternatives are CV_VAR_CATEGORICAL or CV_VAR_ORDERED(=CV_VAR_NUMERICAL)
+	// that can be assigned on a per attribute basis
+	Mat var_type = Mat(num + 1, 1, CV_8U );
+	var_type.setTo(Scalar(CV_VAR_NUMERICAL) ); // all inputs are numerical
+	// this is a classification problem (i.e. predict a discrete number of class
+	// outputs) so reset the last (+1) output var_type element to CV_VAR_CATEGORICAL
+	var_type.at<uchar>(num, 0) = CV_VAR_CATEGORICAL;
+	//float priors[] = {1,1};
+	CvRTParams params = CvRTParams(25, // max depth
+		5, // min sample count
+		0, // regression accuracy: N/A here
+		false, // compute surrogate split, no missing data
+		15, // max number of categories (use sub-optimal algorithm for larger numbers)
+		nullptr, // the array of priors
+		false,  // calculate variable importance
+		4,       // number of variables randomly selected at node and used to find the best split(s).
+		50,	 // max number of trees in the forest
+		0.01f,				// forrest accuracy
+		CV_TERMCRIT_ITER |	CV_TERMCRIT_EPS // termination cirteria
+		);
+
+	// train random forest classifier (using training data)
+	CvRTrees* rtree = new CvRTrees;
+
+	rtree->train(featureMat, CV_ROW_SAMPLE, labelMat,
+		Mat(), Mat(), var_type, Mat(), params);
+	rtree->save("rf.xml");
+	delete rtree;
+}
+
+void TestRFClassifier(string direc) {
+	PointCloudBgr cloud,segment;
+	PointCloudInt labelCloud;
+	Mat img, depth, label;
+	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > normals(new pcl::PointCloud<pcl::PointNormal>);
+	//open training file
+	FILE *fp = fopen("testing_ind.txt","rb");
+	if(fp == NULL)
+		throw exception("Couldn't open testing file");
+	int length, i;
+	fread(&length,sizeof(int),1,fp);
+	deque<int> testingInds;
+	testingInds.resize(length);
+	for(i = 0; i < length; i++) {
+		int tmp;
+		fread(&tmp,sizeof(int),1,fp);
+		testingInds[i] = tmp;
+	}
+	fclose(fp);
+	CvRTrees* rtree = new CvRTrees;
+	rtree->load("rf.xml");
+
+	for(i = 1; i < 1450; i++) {
+		if(i == testingInds.front()) {
+			testingInds.pop_front();
+			cout << i << endl;
+			stringstream num;
+			num << i;
+			img = imread(string(direc + "rgb\\" + num.str() + ".bmp"));
+			depth = imread_depth(string(direc + "depth\\" + num.str() + ".dep").c_str(),true);
+			label = imread_depth(string(direc + "labels\\" + num.str() + ".dep").c_str(),true);
+			CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
+			//CreateLabeledCloudFromNYUPointCloud(cloud,label,&labelCloud);
+			int segments = SHGraphSegment(cloud,parameters[0],parameters[1],parameters[2],parameters[3],parameters[4],parameters[5],&labelCloud,&segment);
+			EstimateNormals(cloud.makeShared(),normals,false);
+			RegionTree3D tree;
+			tree.Create(cloud,labelCloud,*normals,segments,0);
+			tree.PropagateRegionHierarchy(parameters[6]);
+			tree.ImplementSegmentation(parameters[7]);
+			/*viewer.removePointCloud("cloud");
+			viewer.removePointCloud("original");
+			viewer.addPointCloud(segment.makeShared(),"original");
+			viewer.addPointCloudNormals<pcl::PointXYZRGBA,pcl::PointNormal>(segment.makeShared(), normals);
+			while(1)
+			viewer.spinOnce();*/
+			int result, feature_len = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ;
+			vector<Region3D*>::const_iterator p = tree.top_regions.begin();
+			Mat conf = Mat(4,4,CV_32S);
+			for(int i = 0; i < tree.top_regions.size(); i++, p++) {
+				vector<float> sample;
+				GetMatFromRegion(*p,sample,feature_len);
+				Mat sampleMat = Mat(sample);
+				result = int(rtree->predict(sampleMat));
+				
+			}
+
+
+			//release stuff
+			segment.clear();
+			cloud.clear();
+			labelCloud.clear();
+			img.release();
+			depth.release();
+			label.release();
+			normals->clear();
+			tree.top_regions.clear();
+			tree.Release();
+		}
+	}
+
+	delete rtree;
 }

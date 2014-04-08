@@ -181,6 +181,7 @@ public:
 	void TemporalCorrection(RegionTreeType<T,HistContainer,ColorContainer,LabelContainer> &past, int level);
 	void PropagateRegionHierarchy(int min_size = 0);
 	void UpdateCloud(int level);
+	void SetBranch(T* region, int level, int label);
 	/*
 	void GetRegionList(float level, vector<T*> *list);
 	void UpdateRegionList(vector<T*> &list);
