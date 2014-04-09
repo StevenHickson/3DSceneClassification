@@ -266,9 +266,12 @@ int main (int argc, char** argv) {
 		//SimpleSegmentViewer v;
 		//v.run();
 		int run = atoi(argv[2]);
-		if(run == 0)
+		if(run == 0) {
+			Classifier c(argv[1]);
+			c.build_vocab();
+		} else if(run == 1)
 			BuildNYUDataset(string(argv[1]));
-		else if(run == 1)
+		else if(run == 2)
 			BuildRFClassifier(string(argv[1]));
 		else
 			TestRFClassifier(string(argv[1]));

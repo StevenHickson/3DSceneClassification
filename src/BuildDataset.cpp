@@ -1,54 +1,10 @@
 #include "TestVideoSegmentation.h"
 
-const float parameters[] = { 2.0f,150.0f,75,0.5f,50.0f,50,50,0.2f };
+const float parameters[] = { 2.0f,150.0f,75,0.5f,50.0f,50,50,0.1f };
 
 using namespace std;
 using namespace pcl;
 using namespace cv;
-
-Mat imread_depth(const char* fname, bool binary) {
-	char* ext = PathFindExtension(fname);
-	const char char_dep[] = ".dep";
-	const char char_png[] = ".png";
-	Mat out;
-	if(_strnicmp(ext,char_dep,strlen(char_dep))==0) {
-		FILE *fp;
-		if(binary)
-			fp = fopen(fname,"rb");
-		else
-			fp = fopen(fname,"r");
-		int width = 640, height = 480; //If messed up, just assume
-		if(binary) {
-			fread(&width,sizeof(int),1,fp);
-			fread(&height,sizeof(int),1,fp);
-			out = Mat(height,width,CV_32S);
-			int *p = (int*)out.data;
-			fread(p,sizeof(int),width*height,fp);
-		} else {
-			//fscanf(fp,"%i,%i,",&width,&height);
-			out = Mat(height,width,CV_32S);
-			int *p = (int*)out.data, *end = ((int*)out.data) + out.rows*out.cols;
-			while(p != end) {
-				fscanf(fp,"%i",p);
-				p++;
-			}
-		}
-		fclose(fp);
-	} else if(_strnicmp(ext,char_png,strlen(char_png))==0) {
-		out = cvLoadImage(fname,CV_LOAD_IMAGE_ANYDEPTH | CV_LOAD_IMAGE_ANYCOLOR);
-		out.convertTo(out, CV_32S);
-		int* pi = (int*)out.data;
-		for (int y=0; y < out.rows; y++) {
-			for (int x=0; x < out.cols; x++) {
-				*pi = Round(*pi * 0.2f);
-				pi++;
-			}
-		}
-	} else {
-		throw exception("Filetype not supported");
-	}
-	return out;
-}
 
 void CreatePointCloudFromRegisteredNYUData(const Mat &img, const Mat &depth, PointCloudBgr *cloud) {
 	//assert(!img.IsNull() && !depth.IsNull());
@@ -166,14 +122,28 @@ inline float HistTotal(LABXYZUVW *hist) {
 	return tot;
 }
 
-void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud, const Mat &label, const int numImage) {
+inline void CalcMask(const PointCloudInt &cloud, int id, Mat &mask) {
+	PointCloudInt::const_iterator pC = cloud.begin();
+	uchar *pM = mask.data;
+	while(pC != cloud.end()) {
+		if(pC->intensity == id)
+			*pM = 255;
+		++pM; ++pC;
+	}
+}
+
+void GetFeatureVectors(FILE *fp, Classifier &c, const RegionTree3D &tree, Mat &img, const PointCloudInt &cloud, const Mat &label, const int numImage) {
 	//for each top level region, I need to give it a class name.
 	int k;
 	vector<Region3D*>::const_iterator p = tree.top_regions.begin();
 	for(int i = 0; i < tree.top_regions.size(); i++, p++) {
-		/*cout << i << endl;
-		if(i == 51)
-		cout << "This is where it breaks" << endl;*/
+		//Calculate mask
+		Mat desc, mask = Mat::zeros(img.size(),CV_8UC1);
+		CalcMask(cloud,(*p)->m_centroid3D.intensity,mask);
+		//get features
+		c.CalculateBOWFeatures(img,mask,desc);
+		if(desc.empty())
+			desc = Mat::zeros(1,500,CV_32F);
 		int id = GetClass(cloud,label,(*p)->m_centroid3D.intensity);
 		fprintf(fp,"%d,%f,%f,%f,%f,%f",(*p)->m_size,(*p)->m_centroid.x,(*p)->m_centroid.y,(*p)->m_centroid3D.x,(*p)->m_centroid3D.y,(*p)->m_centroid3D.z);
 		float a = ((*p)->m_max3D.x - (*p)->m_min3D.x), b = ((*p)->m_max3D.y - (*p)->m_min3D.y), c = ((*p)->m_max3D.z - (*p)->m_min3D.z);
@@ -198,6 +168,9 @@ void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud,
 			fprintf(fp,",%f",(*p)->m_hist[k].y/(*p)->m_size);
 		for(k = 0; k < NUM_BINS_XYZ; k++)
 			fprintf(fp,",%f",(*p)->m_hist[k].z/(*p)->m_size);
+		float *pD = (float*)desc.data;
+		for(k = 0; k < desc.cols; k++, pD++)
+			fprintf(fp,",%f",*pD);
 		fprintf(fp,",%d,%d\n",numImage,id);
 	}
 }
@@ -248,20 +221,10 @@ void BuildNYUDataset(string direc) {
 	Mat img, depth, label;
 	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > normals(new pcl::PointCloud<pcl::PointNormal>);
 	//open training file
-	FILE *fp = fopen("training_ind.txt","rb");
-	if(fp == NULL)
-		throw exception("Couldn't open training file");
-	int length, i;
-	fread(&length,sizeof(int),1,fp);
-	deque<int> trainingInds;
-	trainingInds.resize(length);
-	for(i = 0; i < length; i++) {
-		int tmp;
-		fread(&tmp,sizeof(int),1,fp);
-		trainingInds[i] = tmp;
-	}
-	fclose(fp);
-	fp = fopen("features.txt","wb");
+	Classifier c(direc);
+	c.LoadTrainingInd();
+	c.load_vocab();
+	FILE *fp = fopen("features.txt","wb");
 	if(fp == NULL)
 		throw exception("Couldn't open features file");
 	/*fprintf(fp,"size,cx,cy,c3x,c3y,c3z,minx,miny,minz,maxx,maxy,maxz,xdist,ydist");
@@ -271,16 +234,11 @@ void BuildNYUDataset(string direc) {
 	}
 	}
 	fprintf(fp,",frame,class\n");*/
-	//pcl::visualization::PCLVisualizer viewer("New viewer");
-	for(i = 1; i < 1450; i++) {
-		if(i == trainingInds.front()) {
-			trainingInds.pop_front();
+	for(int i = 1; i < 1450; i++) {
+		if(i == c.trainingInds.front()) {
+			c.trainingInds.pop_front();
 			cout << i << endl;
-			stringstream num;
-			num << i;
-			img = imread(string(direc + "rgb\\" + num.str() + ".bmp"));
-			depth = imread_depth(string(direc + "depth\\" + num.str() + ".dep").c_str(),true);
-			label = imread_depth(string(direc + "labels\\" + num.str() + ".dep").c_str(),true);
+			LoadData(direc,i,img,depth,label);
 			CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
 			//CreateLabeledCloudFromNYUPointCloud(cloud,label,&labelCloud);
 			int segments = SHGraphSegment(cloud,parameters[0],parameters[1],parameters[2],parameters[3],parameters[4],parameters[5],&labelCloud,&segment);
@@ -289,13 +247,9 @@ void BuildNYUDataset(string direc) {
 			tree.Create(cloud,labelCloud,*normals,segments,0);
 			tree.PropagateRegionHierarchy(parameters[6]);
 			tree.ImplementSegmentation(parameters[7]);
-			/*viewer.removePointCloud("cloud");
-			viewer.removePointCloud("original");
-			viewer.addPointCloud(segment.makeShared(),"original");
-			viewer.addPointCloudNormals<pcl::PointXYZRGBA,pcl::PointNormal>(segment.makeShared(), normals);
-			while(1)
-			viewer.spinOnce();*/
-			GetFeatureVectors(fp,tree,labelCloud,label,i);
+			
+			GetFeatureVectors(fp,c,tree,img,labelCloud,label,i);
+			
 			//release stuff
 			segment.clear();
 			cloud.clear();
@@ -336,22 +290,11 @@ void BuildRFClassifier(string direc) {
 		features.push_back(feature_vec);
 	}
 	fclose(fp);
-	fp = fopen("class4map.txt","rb");
-	if(fp == NULL)
-		throw exception("Couldn't open class mapping file");
-	fread(&length,sizeof(int),1,fp);
-	length++;
-	vector<int> classMap;
-	classMap.resize(length);
-	for(i = 1; i < length; i++) {
-		int tmp;
-		fread(&tmp,sizeof(int),1,fp);
-		classMap[i] = tmp;
-	}
-	fclose(fp);
+	Classifier c(direc);
+	c.LoadClass4Map();
 	vector<int>::iterator pL = labels.begin();
 	while(pL != labels.end()) {
-		*pL = classMap[*pL];
+		*pL = c.classMap[*pL];
 		++pL;
 	}
 	//we should convert this to Mats
@@ -404,73 +347,24 @@ void BuildRFClassifier(string direc) {
 	delete rtree;
 }
 
-void SetBranch(Region3D* region, int label) {
-	assert(region != NULL);
-	if(region->m_numRegions != 0 && region->m_regions != NULL && region->m_regions[0] != NULL && region->m_regions[1] != NULL) {
-		//I am not at the leaf level, tell my children to do proper
-		Region3D **branch = region->m_regions;
-		for(int i = 0; i < region->m_numRegions; i++) {
-			SetBranch(*branch, label);
-			branch++;
-		}
-	} else {
-		//I contain the leaves, Set each one.
-		assert(label != -1);
-		//set my label
-		region->m_centroid3D.intensity = label;
-		vector<PointXYZI*>::iterator pNode = region->m_nodes.begin();
-		while(pNode != region->m_nodes.end()) {
-			(*pNode)->intensity = label;
-			pNode++;
-		}
-	}
-}
-
 void TestRFClassifier(string direc) {
 	PointCloudBgr cloud,segment;
 	PointCloudInt labelCloud;
 	Mat img, depth, label;
 	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > normals(new pcl::PointCloud<pcl::PointNormal>);
 	//open training file
-	FILE *fp = fopen("testing_ind.txt","rb");
-	if(fp == NULL)
-		throw exception("Couldn't open testing file");
-	int length, i;
-	fread(&length,sizeof(int),1,fp);
-	deque<int> testingInds;
-	testingInds.resize(length);
-	for(i = 0; i < length; i++) {
-		int tmp;
-		fread(&tmp,sizeof(int),1,fp);
-		testingInds[i] = tmp;
-	}
-	fclose(fp);
-	fp = fopen("class4map.txt","rb");
-	if(fp == NULL)
-		throw exception("Couldn't open class mapping file");
-	fread(&length,sizeof(int),1,fp);
-	length++;
-	vector<int> classMap;
-	classMap.resize(length);
-	for(i = 1; i < length; i++) {
-		int tmp;
-		fread(&tmp,sizeof(int),1,fp);
-		classMap[i] = tmp;
-	}
-	fclose(fp);
+	Classifier c(direc);
+	c.LoadTestingInd();
+	c.LoadClass4Map();
 	CvRTrees* rtree = new CvRTrees;
 	rtree->load("rf.xml");
 	Mat conf = Mat::zeros(5,5,CV_32S);
 	Mat confClass = Mat::zeros(5,5,CV_32S);
-	for(i = 1; i < 1450; i++) {
-		if(i == testingInds.front()) {
-			testingInds.pop_front();
+	for(int i = 1; i < 1450; i++) {
+		if(i == c.testingInds.front()) {
+			c.testingInds.pop_front();
 			cout << i << endl;
-			stringstream num;
-			num << i;
-			img = imread(string(direc + "rgb\\" + num.str() + ".bmp"));
-			depth = imread_depth(string(direc + "depth\\" + num.str() + ".dep").c_str(),true);
-			label = imread_depth(string(direc + "labels\\" + num.str() + ".dep").c_str(),true);
+			LoadData(direc,i,img,depth,label);
 			CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
 			//CreateLabeledCloudFromNYUPointCloud(cloud,label,&labelCloud);
 			int segments = SHGraphSegment(cloud,parameters[0],parameters[1],parameters[2],parameters[3],parameters[4],parameters[5],&labelCloud,&segment);
@@ -493,8 +387,8 @@ void TestRFClassifier(string direc) {
 				Mat sampleMat = Mat(sample);
 				result = Round(rtree->predict(sampleMat));
 				assert(result > 0 && result <= 4);
-				confClass.at<int>(result,classMap[GetClass(labelCloud,label,(*p)->m_centroid3D.intensity)])++;
-				SetBranch(*p,result);
+				confClass.at<int>(result,c.classMap[GetClass(labelCloud,label,(*p)->m_centroid3D.intensity)])++;
+				tree.SetBranch(*p,0,result);
 			}
 
 			Mat myResult, groundTruth, myResultColor, groundTruthColor, labelColor;
@@ -505,7 +399,7 @@ void TestRFClassifier(string direc) {
 			int *pNewC = (int*)myResult.data;
 			int *pL = (int *)label.data;
 			while(pC != labelCloud.end()) {
-				int newLabel = classMap[*pL];
+				int newLabel = c.classMap[*pL];
 				*pNewL = newLabel;
 				*pNewC = pC->intensity;
 				/*if(newLabel < 0 || newLabel > 4)
