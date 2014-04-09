@@ -21,12 +21,12 @@ Mat imread_depth(const char* fname, bool binary) {
 		if(binary) {
 			fread(&width,sizeof(int),1,fp);
 			fread(&height,sizeof(int),1,fp);
-			out = Mat(width,height,CV_32S);
+			out = Mat(height,width,CV_32S);
 			int *p = (int*)out.data;
 			fread(p,sizeof(int),width*height,fp);
 		} else {
 			//fscanf(fp,"%i,%i,",&width,&height);
-			out = Mat(width,height,CV_32S);
+			out = Mat(height,width,CV_32S);
 			int *p = (int*)out.data, *end = ((int*)out.data) + out.rows*out.cols;
 			while(p != end) {
 				fscanf(fp,"%i",p);
@@ -177,7 +177,7 @@ void GetFeatureVectors(FILE *fp, const RegionTree3D &tree, PointCloudInt &cloud,
 		int id = GetClass(cloud,label,(*p)->m_centroid3D.intensity);
 		fprintf(fp,"%d,%f,%f,%f,%f,%f",(*p)->m_size,(*p)->m_centroid.x,(*p)->m_centroid.y,(*p)->m_centroid3D.x,(*p)->m_centroid3D.y,(*p)->m_centroid3D.z);
 		float a = ((*p)->m_max3D.x - (*p)->m_min3D.x), b = ((*p)->m_max3D.y - (*p)->m_min3D.y), c = ((*p)->m_max3D.z - (*p)->m_min3D.z);
-		fprintf(fp,",%f,%f,%f,%f,%f,%f,%f,%f",(*p)->m_min3D.x,(*p)->m_min3D.y,(*p)->m_min3D.z,(*p)->m_max3D.x,(*p)->m_max3D.y,(*p)->m_max3D.z,(*p)->m_max3D.z,sqrt(a*a + c*c),b);
+		fprintf(fp,",%f,%f,%f,%f,%f,%f,%f,%f",(*p)->m_min3D.x,(*p)->m_min3D.y,(*p)->m_min3D.z,(*p)->m_max3D.x,(*p)->m_max3D.y,(*p)->m_max3D.z,sqrt(a*a + c*c),b);
 		//LABXYZUVW *p1 = (*p)->m_hist;
 		//float tot = HistTotal((*p)->m_hist);
 		for(k = 0; k < NUM_BINS; k++)
@@ -219,7 +219,6 @@ void GetMatFromRegion(Region3D *reg, vector<float> &sample, int sample_size) {
 	*p++ = reg->m_max3D.x;
 	*p++ = reg->m_max3D.y;
 	*p++ = reg->m_max3D.z;
-	*p++ = reg->m_max3D.z;
 	*p++ = sqrt(a*a+c*c);
 	*p++ = b;
 	for(k = 0; k < NUM_BINS; k++)
@@ -238,8 +237,8 @@ void GetMatFromRegion(Region3D *reg, vector<float> &sample, int sample_size) {
 		*p++ = reg->m_hist[k].x / reg->m_size;
 	for(k = 0; k < NUM_BINS_XYZ; k++)
 		*p++ = reg->m_hist[k].y / reg->m_size;
-	for(k = 0; k < NUM_BINS_XYZ; k++)
-		*p++ = reg->m_hist[k].z / reg->m_size;
+	for(k = 0; k < NUM_BINS_XYZ; k++, p++)
+		*p = reg->m_hist[k].z / reg->m_size;
 }
 
 void BuildNYUDataset(string direc) {
@@ -316,7 +315,7 @@ void BuildRFClassifier(string direc) {
 	FILE *fp = fopen("features.txt","rb");
 	if(fp == NULL)
 		throw exception("Couldn't open features file");
-	int i,j,tmp,num = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ;
+	int i,j,length,tmp,num = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ;
 	vector<vector<float>> features;
 	vector<int> labels;
 	features.reserve(200000);
@@ -337,6 +336,24 @@ void BuildRFClassifier(string direc) {
 		features.push_back(feature_vec);
 	}
 	fclose(fp);
+	fp = fopen("class4map.txt","rb");
+	if(fp == NULL)
+		throw exception("Couldn't open class mapping file");
+	fread(&length,sizeof(int),1,fp);
+	length++;
+	vector<int> classMap;
+	classMap.resize(length);
+	for(i = 1; i < length; i++) {
+		int tmp;
+		fread(&tmp,sizeof(int),1,fp);
+		classMap[i] = tmp;
+	}
+	fclose(fp);
+	vector<int>::iterator pL = labels.begin();
+	while(pL != labels.end()) {
+		*pL = classMap[*pL];
+		++pL;
+	}
 	//we should convert this to Mats
 	Mat labelMat = Mat(labels);
 	labels.clear();
@@ -347,10 +364,12 @@ void BuildRFClassifier(string direc) {
 		vector<float> pTmp = *pI;
 		for(j=0;j<num;j++) {
 			*p = pTmp[j];
+			//featureMat.at<float>(i,j) = pTmp[j];
 			//assert(*p == featureMat.at<float>(i,j));
 			++p;
 		}
 		pTmp.clear();
+		++pI;
 	}
 	features.clear();
 
@@ -370,8 +389,8 @@ void BuildRFClassifier(string direc) {
 		15, // max number of categories (use sub-optimal algorithm for larger numbers)
 		nullptr, // the array of priors
 		false,  // calculate variable importance
-		4,       // number of variables randomly selected at node and used to find the best split(s).
-		50,	 // max number of trees in the forest
+		100,       // number of variables randomly selected at node and used to find the best split(s).
+		100,	 // max number of trees in the forest
 		0.01f,				// forrest accuracy
 		CV_TERMCRIT_ITER |	CV_TERMCRIT_EPS // termination cirteria
 		);
@@ -383,6 +402,28 @@ void BuildRFClassifier(string direc) {
 		Mat(), Mat(), var_type, Mat(), params);
 	rtree->save("rf.xml");
 	delete rtree;
+}
+
+void SetBranch(Region3D* region, int label) {
+	assert(region != NULL);
+	if(region->m_numRegions != 0 && region->m_regions != NULL && region->m_regions[0] != NULL && region->m_regions[1] != NULL) {
+		//I am not at the leaf level, tell my children to do proper
+		Region3D **branch = region->m_regions;
+		for(int i = 0; i < region->m_numRegions; i++) {
+			SetBranch(*branch, label);
+			branch++;
+		}
+	} else {
+		//I contain the leaves, Set each one.
+		assert(label != -1);
+		//set my label
+		region->m_centroid3D.intensity = label;
+		vector<PointXYZI*>::iterator pNode = region->m_nodes.begin();
+		while(pNode != region->m_nodes.end()) {
+			(*pNode)->intensity = label;
+			pNode++;
+		}
+	}
 }
 
 void TestRFClassifier(string direc) {
@@ -404,9 +445,23 @@ void TestRFClassifier(string direc) {
 		testingInds[i] = tmp;
 	}
 	fclose(fp);
+	fp = fopen("class4map.txt","rb");
+	if(fp == NULL)
+		throw exception("Couldn't open class mapping file");
+	fread(&length,sizeof(int),1,fp);
+	length++;
+	vector<int> classMap;
+	classMap.resize(length);
+	for(i = 1; i < length; i++) {
+		int tmp;
+		fread(&tmp,sizeof(int),1,fp);
+		classMap[i] = tmp;
+	}
+	fclose(fp);
 	CvRTrees* rtree = new CvRTrees;
 	rtree->load("rf.xml");
-
+	Mat conf = Mat::zeros(5,5,CV_32S);
+	Mat confClass = Mat::zeros(5,5,CV_32S);
 	for(i = 1; i < 1450; i++) {
 		if(i == testingInds.front()) {
 			testingInds.pop_front();
@@ -432,17 +487,51 @@ void TestRFClassifier(string direc) {
 			viewer.spinOnce();*/
 			int result, feature_len = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ;
 			vector<Region3D*>::const_iterator p = tree.top_regions.begin();
-			Mat conf = Mat(4,4,CV_32S);
 			for(int i = 0; i < tree.top_regions.size(); i++, p++) {
 				vector<float> sample;
 				GetMatFromRegion(*p,sample,feature_len);
 				Mat sampleMat = Mat(sample);
-				result = int(rtree->predict(sampleMat));
-				
+				result = Round(rtree->predict(sampleMat));
+				assert(result > 0 && result <= 4);
+				confClass.at<int>(result,classMap[GetClass(labelCloud,label,(*p)->m_centroid3D.intensity)])++;
+				SetBranch(*p,result);
 			}
 
+			Mat myResult, groundTruth, myResultColor, groundTruthColor, labelColor;
+			myResult = Mat(label.rows,label.cols,label.type());
+			groundTruth = Mat(label.rows,label.cols,label.type());
+			PointCloudInt::iterator pC = labelCloud.begin();
+			int *pNewL = (int*)groundTruth.data;
+			int *pNewC = (int*)myResult.data;
+			int *pL = (int *)label.data;
+			while(pC != labelCloud.end()) {
+				int newLabel = classMap[*pL];
+				*pNewL = newLabel;
+				*pNewC = pC->intensity;
+				/*if(newLabel < 0 || newLabel > 4)
+				cout << "label is: " << newLabel << endl;
+				if(pC->intensity < 0 || pC->intensity > 4)
+				cout << "result is: " << pC->intensity << endl;
+				else*/
+				conf.at<int>(pC->intensity,newLabel)++;
+				++pL; ++pC; ++pNewL; ++pNewC;
+			}
+			/*groundTruth.convertTo(groundTruth,CV_8UC1,63,0);
+			myResult.convertTo(myResult,CV_8UC1,63,0);
+			label.convertTo(labelColor,CV_8UC1,894,0);
+			applyColorMap(groundTruth,groundTruthColor,COLORMAP_JET);
+			applyColorMap(myResult,myResultColor,COLORMAP_JET);
+			imshow("color",img);
+			imshow("original label",labelColor);
+			imshow("label",groundTruthColor);
+			imshow("result",myResultColor);
+			waitKey();*/
 
 			//release stuff
+			myResult.release();
+			groundTruth.release();
+			myResultColor.release();
+			groundTruthColor.release();
 			segment.clear();
 			cloud.clear();
 			labelCloud.clear();
@@ -454,6 +543,31 @@ void TestRFClassifier(string direc) {
 			tree.Release();
 		}
 	}
+
+	float tot = 0, result = 0;
+	int x,y;
+	for(x=1; x<5; x++) {
+		for(y=1; y<5; y++) {
+			cout << conf.at<int>(x,y) << ", ";
+			tot += conf.at<int>(x,y);
+			if(x == y)
+				result += conf.at<int>(x,y);
+		}
+		cout << endl;
+	}
+	cout << "Accuracy: " << (result / tot) << endl;
+	cout << endl;
+	tot = 0; result = 0;
+	for(x=1; x<5; x++) {
+		for(y=1; y<5; y++) {
+			cout << confClass.at<int>(x,y) << ", ";
+			tot += confClass.at<int>(x,y);
+			if(x == y)
+				result += confClass.at<int>(x,y);
+		}
+		cout << endl;
+	}
+	cout << "Class Accuracy: " << (result / tot) << endl;
 
 	delete rtree;
 }

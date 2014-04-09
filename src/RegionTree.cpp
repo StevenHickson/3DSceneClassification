@@ -489,7 +489,7 @@ void RegionTree3D::TemporalCorrection(RegionTree3D &past, int level) {
 				//int size_diff = absf(int((pCurr)->m_size) - int(currSeg[*pCurr].m_size));
 				//float hist_diff = HistDifference(*pCurr,currSeg[*pCurr]);
 				//if(hist_diff <= MIN_REGION_HIST && ((pCurr)->m_size < MAX_CONVERGING_SIZE || (size_diff <= (pCurr)->m_size * MIN_REGION_SIZE && min < MIN_REGION_DIST)))
-				SetBranch(this,*pCurr,(*pCurr)->m_level,currSeg[**pCurr].m_centroid3D.intensity);
+				SetBranch(*pCurr,(*pCurr)->m_level,currSeg[**pCurr].m_centroid3D.intensity);
 			}
 			++pCurr;
 		}
