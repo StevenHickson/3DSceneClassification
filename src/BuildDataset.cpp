@@ -132,52 +132,80 @@ inline void CalcMask(const PointCloudInt &cloud, int id, Mat &mask) {
 	}
 }
 
-void GetFeatureVectors(FILE *fp, Classifier &c, const RegionTree3D &tree, Mat &img, const PointCloudInt &cloud, const Mat &label, const int numImage) {
+void GetFeatureVectors(Mat &trainData, Classifier &cl, const RegionTree3D &tree, Mat &img, const PointCloudInt &cloud, const Mat &label, const int numImage) {
 	//for each top level region, I need to give it a class name.
 	int k;
+	const int size1 = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ, size2 = (size1 + NUM_CLUSTERS + 2);
 	vector<Region3D*>::const_iterator p = tree.top_regions.begin();
 	for(int i = 0; i < tree.top_regions.size(); i++, p++) {
 		//Calculate mask
 		Mat desc, mask = Mat::zeros(img.size(),CV_8UC1);
 		CalcMask(cloud,(*p)->m_centroid3D.intensity,mask);
 		//get features
-		c.CalculateBOWFeatures(img,mask,desc);
+		cl.CalculateBOWFeatures(img,mask,desc);
 		if(desc.empty())
 			desc = Mat::zeros(1,500,CV_32F);
 		int id = GetClass(cloud,label,(*p)->m_centroid3D.intensity);
-		fprintf(fp,"%d,%f,%f,%f,%f,%f",(*p)->m_size,(*p)->m_centroid.x,(*p)->m_centroid.y,(*p)->m_centroid3D.x,(*p)->m_centroid3D.y,(*p)->m_centroid3D.z);
-		float a = ((*p)->m_max3D.x - (*p)->m_min3D.x), b = ((*p)->m_max3D.y - (*p)->m_min3D.y), c = ((*p)->m_max3D.z - (*p)->m_min3D.z);
-		fprintf(fp,",%f,%f,%f,%f,%f,%f,%f,%f",(*p)->m_min3D.x,(*p)->m_min3D.y,(*p)->m_min3D.z,(*p)->m_max3D.x,(*p)->m_max3D.y,(*p)->m_max3D.z,sqrt(a*a + c*c),b);
-		//LABXYZUVW *p1 = (*p)->m_hist;
-		//float tot = HistTotal((*p)->m_hist);
-		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%f",float((*p)->m_hist[k].a)/(*p)->m_size);
-		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%f",float((*p)->m_hist[k].b)/(*p)->m_size);
-		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%f",float((*p)->m_hist[k].l)/(*p)->m_size);
-		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].u/(*p)->m_size);
-		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].v/(*p)->m_size);
-		for(k = 0; k < NUM_BINS; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].w/(*p)->m_size);
-		for(k = 0; k < NUM_BINS_XYZ; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].x/(*p)->m_size);
-		for(k = 0; k < NUM_BINS_XYZ; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].y/(*p)->m_size);
-		for(k = 0; k < NUM_BINS_XYZ; k++)
-			fprintf(fp,",%f",(*p)->m_hist[k].z/(*p)->m_size);
-		float *pD = (float*)desc.data;
-		for(k = 0; k < desc.cols; k++, pD++)
-			fprintf(fp,",%f",*pD);
-		fprintf(fp,",%d,%d\n",numImage,id);
+		if(id != 0) {
+			Mat vec = Mat(1,size2,CV_32F);
+			float *pV = (float*)vec.data;
+			*pV++ = float((*p)->m_size);
+			*pV++ = (*p)->m_centroid.x;
+			*pV++ = (*p)->m_centroid.y;
+			*pV++ = (*p)->m_centroid3D.x;
+			*pV++ = (*p)->m_centroid3D.y;
+			*pV++ = (*p)->m_centroid3D.z;
+			float a = ((*p)->m_max3D.x - (*p)->m_min3D.x), b = ((*p)->m_max3D.y - (*p)->m_min3D.y), c = ((*p)->m_max3D.z - (*p)->m_min3D.z);
+			*pV++ = (*p)->m_min3D.x;
+			*pV++ = (*p)->m_min3D.y;
+			*pV++ = (*p)->m_min3D.z;
+			*pV++ = (*p)->m_max3D.x;
+			*pV++ = (*p)->m_max3D.y;
+			*pV++ = (*p)->m_max3D.z;
+			*pV++ = sqrt(a*a + c*c);
+			*pV++ = b;
+			//LABXYZUVW *p1 = (*p)->m_hist;
+			//float tot = HistTotal((*p)->m_hist);
+			for(k = 0; k < NUM_BINS; k++)
+				*pV++ = float((*p)->m_hist[k].a)/(*p)->m_size;
+			for(k = 0; k < NUM_BINS; k++)
+				*pV++ = float((*p)->m_hist[k].b)/(*p)->m_size;
+			for(k = 0; k < NUM_BINS; k++)
+				*pV++ = float((*p)->m_hist[k].l)/(*p)->m_size;
+			for(k = 0; k < NUM_BINS; k++)
+				*pV++ = (*p)->m_hist[k].u/(*p)->m_size;
+			for(k = 0; k < NUM_BINS; k++)
+				*pV++ = (*p)->m_hist[k].v/(*p)->m_size;
+			for(k = 0; k < NUM_BINS; k++)
+				*pV++ = (*p)->m_hist[k].w/(*p)->m_size;
+			for(k = 0; k < NUM_BINS_XYZ; k++)
+				*pV++ = (*p)->m_hist[k].x/(*p)->m_size;
+			for(k = 0; k < NUM_BINS_XYZ; k++)
+				*pV++ = (*p)->m_hist[k].y/(*p)->m_size;
+			for(k = 0; k < NUM_BINS_XYZ; k++)
+				*pV++ = (*p)->m_hist[k].z/(*p)->m_size;
+			float *pD = (float*)desc.data;
+			for(k = 0; k < desc.cols; k++, pD++)
+				*pV++ = *pD;
+			float tmp = numImage;
+			*pV++ = tmp;
+			tmp = id;
+			*pV++ = tmp;
+			trainData.push_back(vec);
+		}
 	}
 }
 
-void GetMatFromRegion(Region3D *reg, vector<float> &sample, int sample_size) {
+void GetMatFromRegion(Region3D *reg, Classifier &cl, const PointCloudInt &cloud, Mat &img, vector<float> &sample, int sample_size) {
 	int k;
 	sample.resize(sample_size);
+	//Calculate mask
+	Mat desc, mask = Mat::zeros(img.size(),CV_8UC1);
+	CalcMask(cloud,reg->m_centroid3D.intensity,mask);
+	//get features
+	cl.CalculateBOWFeatures(img,mask,desc);
+	if(desc.empty())
+		desc = Mat::zeros(1,500,CV_32F);
 	vector<float>::iterator p = sample.begin();
 	*p++ = float(reg->m_size);
 	*p++ = reg->m_centroid.x;
@@ -210,31 +238,36 @@ void GetMatFromRegion(Region3D *reg, vector<float> &sample, int sample_size) {
 		*p++ = reg->m_hist[k].x / reg->m_size;
 	for(k = 0; k < NUM_BINS_XYZ; k++)
 		*p++ = reg->m_hist[k].y / reg->m_size;
-	for(k = 0; k < NUM_BINS_XYZ; k++, p++)
-		*p = reg->m_hist[k].z / reg->m_size;
+	for(k = 0; k < NUM_BINS_XYZ; k++)
+		*p++ = reg->m_hist[k].z / reg->m_size;
+	float *pD = (float*)desc.data;
+	for(k = 0; k < desc.cols; k++, pD++)
+		*p++ = *pD;
 }
 
 void BuildNYUDataset(string direc) {
 	srand(time(NULL));
 	PointCloudBgr cloud,segment;
 	PointCloudInt labelCloud;
-	Mat img, depth, label;
+	Mat img, depth, label, trainData;
 	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > normals(new pcl::PointCloud<pcl::PointNormal>);
-	//open training file
 	Classifier c(direc);
 	c.LoadTrainingInd();
 	c.load_vocab();
-	FILE *fp = fopen("features.txt","wb");
+	//open training file
+	FileStorage fs("training.yml", FileStorage::WRITE);
+	/*FILE *fp = fopen("features.txt","wb");
 	if(fp == NULL)
-		throw exception("Couldn't open features file");
-	/*fprintf(fp,"size,cx,cy,c3x,c3y,c3z,minx,miny,minz,maxx,maxy,maxz,xdist,ydist");
+	throw exception("Couldn't open features file");
+	fprintf(fp,"size,cx,cy,c3x,c3y,c3z,minx,miny,minz,maxx,maxy,maxz,xdist,ydist");
 	for(int j = 0; j < 9; j++) {
 	for(int k = 0; k < (j < 6 ? NUM_BINS : NUM_BINS_XYZ); k++) {
 	fprintf(fp,",h%d_%d",j,k);
 	}
 	}
 	fprintf(fp,",frame,class\n");*/
-	for(int i = 1; i < 1450; i++) {
+	int count = 0;
+	for(int i = 1; i < 20; i++) {
 		if(i == c.trainingInds.front()) {
 			c.trainingInds.pop_front();
 			cout << i << endl;
@@ -247,9 +280,13 @@ void BuildNYUDataset(string direc) {
 			tree.Create(cloud,labelCloud,*normals,segments,0);
 			tree.PropagateRegionHierarchy(parameters[6]);
 			tree.ImplementSegmentation(parameters[7]);
-			
-			GetFeatureVectors(fp,c,tree,img,labelCloud,label,i);
-			
+
+			GetFeatureVectors(trainData,c,tree,img,labelCloud,label,i);
+			stringstream num;
+			num << "Mat" << count;
+			fs << num.str().c_str() << trainData;
+			count++;
+
 			//release stuff
 			segment.clear();
 			cloud.clear();
@@ -257,73 +294,49 @@ void BuildNYUDataset(string direc) {
 			img.release();
 			depth.release();
 			label.release();
+			trainData.release();
 			normals->clear();
 			tree.top_regions.clear();
 			tree.Release();
 		}
 	}
-	fclose(fp);
+	fs << "count" << count;
+	//fclose(fp);
+	fs.release();
 }
 
 void BuildRFClassifier(string direc) {
-	FILE *fp = fopen("features.txt","rb");
-	if(fp == NULL)
-		throw exception("Couldn't open features file");
-	int i,j,length,tmp,num = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ;
-	vector<vector<float>> features;
-	vector<int> labels;
-	features.reserve(200000);
-	labels.reserve(200000);
-	while(!feof(fp)) {
-		vector<float> feature_vec;
-		feature_vec.resize(num);
-		fscanf(fp,"%d",&tmp);
-		feature_vec[0] = float(tmp);
-		for(i = 1; i < num; i++) {
-			float tmp_f;
-			fscanf(fp,",%f",&tmp_f);
-			feature_vec[i] = tmp_f;
-		}
-		fscanf(fp,",%d",&tmp);
-		fscanf(fp,",%d\n",&tmp);
-		labels.push_back(tmp);
-		features.push_back(feature_vec);
-	}
-	fclose(fp);
 	Classifier c(direc);
 	c.LoadClass4Map();
-	vector<int>::iterator pL = labels.begin();
-	while(pL != labels.end()) {
+	FileStorage fs("training.yml", FileStorage::READ);
+	int i,count;
+	fs["count"] >> count;
+	Mat data, train, labels;
+	for(i = 0; i < count; i++) {
+		Mat tmp;
+		stringstream num;
+		num << "Mat" << i;
+		fs[num.str().c_str()] >> tmp;
+		data.push_back(tmp);
+	}
+	train = data.colRange(0,data.cols-2);
+	labels = data.col(data.cols-1);
+	labels.convertTo(labels,CV_32S);
+	int* pL = (int*)labels.data, *pEnd = pL + labels.rows;
+	while(pL != pEnd) {
 		*pL = c.classMap[*pL];
 		++pL;
 	}
-	//we should convert this to Mats
-	Mat labelMat = Mat(labels);
-	labels.clear();
-	Mat featureMat = Mat(features.size(),num,CV_32F);
-	float *p = (float *)featureMat.data;
-	vector<vector<float>>::iterator pI = features.begin();
-	for(i=0;i<features.size();i++) {
-		vector<float> pTmp = *pI;
-		for(j=0;j<num;j++) {
-			*p = pTmp[j];
-			//featureMat.at<float>(i,j) = pTmp[j];
-			//assert(*p == featureMat.at<float>(i,j));
-			++p;
-		}
-		pTmp.clear();
-		++pI;
-	}
-	features.clear();
+
 
 	// define all the attributes as numerical
 	// alternatives are CV_VAR_CATEGORICAL or CV_VAR_ORDERED(=CV_VAR_NUMERICAL)
 	// that can be assigned on a per attribute basis
-	Mat var_type = Mat(num + 1, 1, CV_8U );
+	Mat var_type = Mat(train.cols + 1, 1, CV_8U );
 	var_type.setTo(Scalar(CV_VAR_NUMERICAL) ); // all inputs are numerical
 	// this is a classification problem (i.e. predict a discrete number of class
 	// outputs) so reset the last (+1) output var_type element to CV_VAR_CATEGORICAL
-	var_type.at<uchar>(num, 0) = CV_VAR_CATEGORICAL;
+	var_type.at<uchar>(train.cols, 0) = CV_VAR_CATEGORICAL;
 	//float priors[] = {1,1};
 	CvRTParams params = CvRTParams(25, // max depth
 		5, // min sample count
@@ -341,7 +354,7 @@ void BuildRFClassifier(string direc) {
 	// train random forest classifier (using training data)
 	CvRTrees* rtree = new CvRTrees;
 
-	rtree->train(featureMat, CV_ROW_SAMPLE, labelMat,
+	rtree->train(train, CV_ROW_SAMPLE, labels,
 		Mat(), Mat(), var_type, Mat(), params);
 	rtree->save("rf.xml");
 	delete rtree;
@@ -356,11 +369,12 @@ void TestRFClassifier(string direc) {
 	Classifier c(direc);
 	c.LoadTestingInd();
 	c.LoadClass4Map();
+	c.load_vocab();
 	CvRTrees* rtree = new CvRTrees;
 	rtree->load("rf.xml");
 	Mat conf = Mat::zeros(5,5,CV_32S);
 	Mat confClass = Mat::zeros(5,5,CV_32S);
-	for(int i = 1; i < 1450; i++) {
+	for(int i = 1; i < 20; i++) {
 		if(i == c.testingInds.front()) {
 			c.testingInds.pop_front();
 			cout << i << endl;
@@ -379,15 +393,16 @@ void TestRFClassifier(string direc) {
 			viewer.addPointCloudNormals<pcl::PointXYZRGBA,pcl::PointNormal>(segment.makeShared(), normals);
 			while(1)
 			viewer.spinOnce();*/
-			int result, feature_len = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ;
+			int result, feature_len = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ + NUM_CLUSTERS;
 			vector<Region3D*>::const_iterator p = tree.top_regions.begin();
 			for(int i = 0; i < tree.top_regions.size(); i++, p++) {
 				vector<float> sample;
-				GetMatFromRegion(*p,sample,feature_len);
+				GetMatFromRegion(*p,c,labelCloud,img,sample,feature_len);
 				Mat sampleMat = Mat(sample);
 				result = Round(rtree->predict(sampleMat));
-				assert(result > 0 && result <= 4);
-				confClass.at<int>(result,c.classMap[GetClass(labelCloud,label,(*p)->m_centroid3D.intensity)])++;
+				int id = GetClass(labelCloud,label,(*p)->m_centroid3D.intensity);
+				if(id > 0 && result > 0)
+					confClass.at<int>(result,c.classMap[id])++;
 				tree.SetBranch(*p,0,result);
 			}
 
@@ -407,7 +422,8 @@ void TestRFClassifier(string direc) {
 				if(pC->intensity < 0 || pC->intensity > 4)
 				cout << "result is: " << pC->intensity << endl;
 				else*/
-				conf.at<int>(pC->intensity,newLabel)++;
+				if(pC->intensity > 0 && newLabel > 0)
+					conf.at<int>(pC->intensity,newLabel)++;
 				++pL; ++pC; ++pNewL; ++pNewC;
 			}
 			/*groundTruth.convertTo(groundTruth,CV_8UC1,63,0);
@@ -440,8 +456,8 @@ void TestRFClassifier(string direc) {
 
 	float tot = 0, result = 0;
 	int x,y;
-	for(x=1; x<5; x++) {
-		for(y=1; y<5; y++) {
+	for(x=0; x<5; x++) {
+		for(y=0; y<5; y++) {
 			cout << conf.at<int>(x,y) << ", ";
 			tot += conf.at<int>(x,y);
 			if(x == y)
@@ -452,8 +468,8 @@ void TestRFClassifier(string direc) {
 	cout << "Accuracy: " << (result / tot) << endl;
 	cout << endl;
 	tot = 0; result = 0;
-	for(x=1; x<5; x++) {
-		for(y=1; y<5; y++) {
+	for(x=0; x<5; x++) {
+		for(y=0; y<5; y++) {
 			cout << confClass.at<int>(x,y) << ", ";
 			tot += confClass.at<int>(x,y);
 			if(x == y)

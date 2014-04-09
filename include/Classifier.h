@@ -42,7 +42,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 #include <Shlwapi.h>
 #include <string.h>
 
-#define NUM_CLUSTERS 500;
+#define NUM_CLUSTERS 500
 
 cv::Mat imread_depth(const char* fname, bool binary);
 void CreatePointCloudFromRegisteredNYUData(const cv::Mat &img, const cv::Mat &depth, PointCloudBgr *cloud);
