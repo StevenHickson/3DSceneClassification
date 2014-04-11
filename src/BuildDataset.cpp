@@ -1,6 +1,6 @@
 #include "TestVideoSegmentation.h"
 
-const float parameters[] = { 2.0f,150.0f,75,0.5f,50.0f,50,50,0.1f };
+const float parameters[] = { 0.5f,300.0f,100,0.8f,100.0f,100,100,0.1f };
 
 using namespace std;
 using namespace pcl;
@@ -135,16 +135,34 @@ inline void CalcMask(const PointCloudInt &cloud, int id, Mat &mask) {
 void GetFeatureVectors(Mat &trainData, Classifier &cl, const RegionTree3D &tree, Mat &img, const PointCloudInt &cloud, const Mat &label, const int numImage) {
 	//for each top level region, I need to give it a class name.
 	int k;
-	const int size1 = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ, size2 = (size1 + NUM_CLUSTERS + 2);
+	const int size1 = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ, size2 = (size1 + NUM_CLUSTERS + 3);
+	Mat gImg, desc;
+	cvtColor(img, gImg, CV_BGR2GRAY);
+	vector<KeyPoint> kp;
+	cl.featureDetector->detect(gImg,kp);
+	vector<KeyPoint> regionPoints;
+	regionPoints.reserve(kp.size());
 	vector<Region3D*>::const_iterator p = tree.top_regions.begin();
+	//Mat element = getStructuringElement(MORPH_RECT, Size( 2*2 + 1, 2*2+1 ), Point( 2, 2 ) );
 	for(int i = 0; i < tree.top_regions.size(); i++, p++) {
-		//Calculate mask
-		Mat desc, mask = Mat::zeros(img.size(),CV_8UC1);
-		CalcMask(cloud,(*p)->m_centroid3D.intensity,mask);
-		//get features
-		cl.CalculateBOWFeatures(img,mask,desc);
+		////Calculate mask
+		//Mat desc, mask = Mat::zeros(img.size(),CV_8UC1);
+		//CalcMask(cloud,(*p)->m_centroid3D.intensity,mask);
+		//dilate(mask,mask,element);
+		////get features
+		//cl.CalculateBOWFeatures(img,mask,desc);
+		Mat desc;
+		regionPoints.clear();
+		vector<KeyPoint>::iterator pK = kp.begin();
+		while(pK != kp.end()) {
+			PointXYZI p3D = cloud(pK->pt.x,pK->pt.y);
+			if(p3D.x >= (*p)->m_min3D.x && p3D.x <= (*p)->m_max3D.x && p3D.y >= (*p)->m_min3D.y && p3D.y <= (*p)->m_max3D.y && p3D.z >= (*p)->m_min3D.z && p3D.z <= (*p)->m_max3D.z)
+				regionPoints.push_back(*pK);
+			++pK;
+		}
+		cl.bowDescriptorExtractor->compute(gImg,regionPoints,desc);
 		if(desc.empty())
-			desc = Mat::zeros(1,500,CV_32F);
+			desc = Mat::zeros(1,NUM_CLUSTERS,CV_32F);
 		int id = GetClass(cloud,label,(*p)->m_centroid3D.intensity);
 		if(id != 0) {
 			Mat vec = Mat(1,size2,CV_32F);
@@ -187,25 +205,35 @@ void GetFeatureVectors(Mat &trainData, Classifier &cl, const RegionTree3D &tree,
 			float *pD = (float*)desc.data;
 			for(k = 0; k < desc.cols; k++, pD++)
 				*pV++ = *pD;
-			float tmp = numImage;
-			*pV++ = tmp;
-			tmp = id;
-			*pV++ = tmp;
+			*pV++ = float((*p)->m_centroid3D.intensity);
+			*pV++ = float(numImage);
+			*pV++ = float(id);
 			trainData.push_back(vec);
 		}
 	}
 }
 
-void GetMatFromRegion(Region3D *reg, Classifier &cl, const PointCloudInt &cloud, Mat &img, vector<float> &sample, int sample_size) {
+void GetMatFromRegion(Region3D *reg, Classifier &cl, const PointCloudInt &cloud, vector<KeyPoint> &kp, Mat &img, vector<float> &sample, int sample_size) {
 	int k;
 	sample.resize(sample_size);
 	//Calculate mask
-	Mat desc, mask = Mat::zeros(img.size(),CV_8UC1);
-	CalcMask(cloud,reg->m_centroid3D.intensity,mask);
-	//get features
-	cl.CalculateBOWFeatures(img,mask,desc);
+	//Mat desc, mask = Mat::zeros(img.size(),CV_8UC1);
+	//CalcMask(cloud,reg->m_centroid3D.intensity,mask);
+	////get features
+	//cl.CalculateBOWFeatures(img,mask,desc);
+	Mat desc;
+	vector<KeyPoint> regionPoints;
+	regionPoints.reserve(kp.size());
+	vector<KeyPoint>::iterator pK = kp.begin();
+	while(pK != kp.end()) {
+		PointXYZI p3D = cloud(pK->pt.x,pK->pt.y);
+		if(p3D.x >= reg->m_min3D.x && p3D.x <= reg->m_max3D.x && p3D.y >= reg->m_min3D.y && p3D.y <= reg->m_max3D.y && p3D.z >= reg->m_min3D.z && p3D.z <= reg->m_max3D.z)
+			regionPoints.push_back(*pK);
+		++pK;
+	}
+	cl.descriptorExtractor->compute(img,regionPoints,desc);
 	if(desc.empty())
-		desc = Mat::zeros(1,500,CV_32F);
+		desc = Mat::zeros(1,NUM_CLUSTERS,CV_32F);
 	vector<float>::iterator p = sample.begin();
 	*p++ = float(reg->m_size);
 	*p++ = reg->m_centroid.x;
@@ -245,6 +273,28 @@ void GetMatFromRegion(Region3D *reg, Classifier &cl, const PointCloudInt &cloud,
 		*p++ = *pD;
 }
 
+inline void GetMatFromCloud(const PointCloudBgr &cloud, Mat &img) {
+	img = Mat(cloud.height,cloud.width,CV_8UC3);
+	Mat_<Vec3b>::iterator pI = img.begin<Vec3b>();
+	PointCloudBgr::const_iterator pC = cloud.begin();
+	while(pC != cloud.end()) {
+		(*pI)[0] = pC->b;
+		(*pI)[1] = pC->g;
+		(*pI)[2] = pC->r;
+		++pI; ++pC;
+	}
+}
+
+inline void GetMatFromCloud(const PointCloudInt &cloud, Mat &img) {
+	img = Mat(cloud.height,cloud.width,CV_32S);
+	Mat_<int>::iterator pI = img.begin<int>();
+	PointCloudInt::const_iterator pC = cloud.begin();
+	while(pC != cloud.end()) {
+		*pI = pC->intensity;
+		++pI; ++pC;
+	}
+}
+
 void BuildNYUDataset(string direc) {
 	srand(time(NULL));
 	PointCloudBgr cloud,segment;
@@ -255,7 +305,6 @@ void BuildNYUDataset(string direc) {
 	c.LoadTrainingInd();
 	c.load_vocab();
 	//open training file
-	FileStorage fs("training.yml", FileStorage::WRITE);
 	/*FILE *fp = fopen("features.txt","wb");
 	if(fp == NULL)
 	throw exception("Couldn't open features file");
@@ -267,7 +316,7 @@ void BuildNYUDataset(string direc) {
 	}
 	fprintf(fp,",frame,class\n");*/
 	int count = 0;
-	for(int i = 1; i < 20; i++) {
+	for(int i = 1; i < 1450; i++) {
 		if(i == c.trainingInds.front()) {
 			c.trainingInds.pop_front();
 			cout << i << endl;
@@ -283,8 +332,13 @@ void BuildNYUDataset(string direc) {
 
 			GetFeatureVectors(trainData,c,tree,img,labelCloud,label,i);
 			stringstream num;
-			num << "Mat" << count;
-			fs << num.str().c_str() << trainData;
+			num << "training/" << count << ".flt";
+			imwrite_float(num.str().c_str(),trainData);
+			stringstream num2;
+			num2 << "segments/" << count << ".dep";
+			Mat segmentMat;
+			GetMatFromCloud(labelCloud,segmentMat);
+			imwrite_depth(num2.str().c_str(),segmentMat);
 			count++;
 
 			//release stuff
@@ -300,26 +354,28 @@ void BuildNYUDataset(string direc) {
 			tree.Release();
 		}
 	}
-	fs << "count" << count;
+	FileStorage tot("count.yml", FileStorage::WRITE);
+	tot << "count" << count;
 	//fclose(fp);
-	fs.release();
+	tot.release();
 }
 
 void BuildRFClassifier(string direc) {
 	Classifier c(direc);
 	c.LoadClass4Map();
-	FileStorage fs("training.yml", FileStorage::READ);
+	FileStorage fs("count.yml", FileStorage::READ);
 	int i,count;
 	fs["count"] >> count;
+	fs.release();
 	Mat data, train, labels;
 	for(i = 0; i < count; i++) {
 		Mat tmp;
 		stringstream num;
-		num << "Mat" << i;
-		fs[num.str().c_str()] >> tmp;
+		num << "training/" << i << ".flt";
+		tmp = imread_float(num.str().c_str());
 		data.push_back(tmp);
 	}
-	train = data.colRange(0,data.cols-2);
+	train = data.colRange(0,data.cols-3);
 	labels = data.col(data.cols-1);
 	labels.convertTo(labels,CV_32S);
 	int* pL = (int*)labels.data, *pEnd = pL + labels.rows;
@@ -345,8 +401,8 @@ void BuildRFClassifier(string direc) {
 		15, // max number of categories (use sub-optimal algorithm for larger numbers)
 		nullptr, // the array of priors
 		false,  // calculate variable importance
-		100,       // number of variables randomly selected at node and used to find the best split(s).
-		100,	 // max number of trees in the forest
+		50,       // number of variables randomly selected at node and used to find the best split(s).
+		500,	 // max number of trees in the forest
 		0.01f,				// forrest accuracy
 		CV_TERMCRIT_ITER |	CV_TERMCRIT_EPS // termination cirteria
 		);
@@ -374,7 +430,7 @@ void TestRFClassifier(string direc) {
 	rtree->load("rf.xml");
 	Mat conf = Mat::zeros(5,5,CV_32S);
 	Mat confClass = Mat::zeros(5,5,CV_32S);
-	for(int i = 1; i < 20; i++) {
+	for(int i = 1; i < 1450; i++) {
 		if(i == c.testingInds.front()) {
 			c.testingInds.pop_front();
 			cout << i << endl;
@@ -394,19 +450,24 @@ void TestRFClassifier(string direc) {
 			while(1)
 			viewer.spinOnce();*/
 			int result, feature_len = 14 + 6*NUM_BINS + 3*NUM_BINS_XYZ + NUM_CLUSTERS;
+			Mat gImg;
+			cvtColor(img, gImg, CV_BGR2GRAY);
+			vector<KeyPoint> kp;
+			c.featureDetector->detect(gImg,kp);
+			//Mat element = getStructuringElement(MORPH_RECT, Size( 2*2 + 1, 2*2+1 ), Point( 2, 2 ) );
 			vector<Region3D*>::const_iterator p = tree.top_regions.begin();
 			for(int i = 0; i < tree.top_regions.size(); i++, p++) {
 				vector<float> sample;
-				GetMatFromRegion(*p,c,labelCloud,img,sample,feature_len);
+				GetMatFromRegion(*p,c,labelCloud,kp,img,sample,feature_len);
 				Mat sampleMat = Mat(sample);
 				result = Round(rtree->predict(sampleMat));
 				int id = GetClass(labelCloud,label,(*p)->m_centroid3D.intensity);
 				if(id > 0 && result > 0)
-					confClass.at<int>(result,c.classMap[id])++;
+					confClass.at<int>(c.classMap[id],result)++;
 				tree.SetBranch(*p,0,result);
 			}
 
-			Mat myResult, groundTruth, myResultColor, groundTruthColor, labelColor;
+			Mat myResult, groundTruth, myResultColor, groundTruthColor, labelColor, segmentMat;
 			myResult = Mat(label.rows,label.cols,label.type());
 			groundTruth = Mat(label.rows,label.cols,label.type());
 			PointCloudInt::iterator pC = labelCloud.begin();
@@ -423,10 +484,11 @@ void TestRFClassifier(string direc) {
 				cout << "result is: " << pC->intensity << endl;
 				else*/
 				if(pC->intensity > 0 && newLabel > 0)
-					conf.at<int>(pC->intensity,newLabel)++;
+					conf.at<int>(newLabel,pC->intensity)++;
 				++pL; ++pC; ++pNewL; ++pNewC;
 			}
-			/*groundTruth.convertTo(groundTruth,CV_8UC1,63,0);
+			/*GetMatFromCloud(segment,segmentMat);
+			groundTruth.convertTo(groundTruth,CV_8UC1,63,0);
 			myResult.convertTo(myResult,CV_8UC1,63,0);
 			label.convertTo(labelColor,CV_8UC1,894,0);
 			applyColorMap(groundTruth,groundTruthColor,COLORMAP_JET);
@@ -435,9 +497,11 @@ void TestRFClassifier(string direc) {
 			imshow("original label",labelColor);
 			imshow("label",groundTruthColor);
 			imshow("result",myResultColor);
+			imshow("segment",segmentMat);
 			waitKey();*/
 
 			//release stuff
+			segmentMat.release();
 			myResult.release();
 			groundTruth.release();
 			myResultColor.release();

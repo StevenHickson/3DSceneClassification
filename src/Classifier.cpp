@@ -48,6 +48,99 @@ Mat imread_depth(const char* fname, bool binary) {
 	return out;
 }
 
+Mat imread_float(const char* fname, bool binary) {
+	char* ext = PathFindExtension(fname);
+	const char char_dep[] = ".flt";
+	Mat out;
+	if(_strnicmp(ext,char_dep,strlen(char_dep))==0) {
+		FILE *fp;
+		if(binary)
+			fp = fopen(fname,"rb");
+		else
+			fp = fopen(fname,"r");
+		int width = 640, height = 480; //If messed up, just assume
+		if(binary) {
+			fread(&width,sizeof(int),1,fp);
+			fread(&height,sizeof(int),1,fp);
+			out = Mat(height,width,CV_32S);
+			float *p = (float*)out.data;
+			fread(p,sizeof(float),width*height,fp);
+		} else {
+			//fscanf(fp,"%i,%i,",&width,&height);
+			out = Mat(height,width,CV_32S);
+			float *p = (float*)out.data, *end = ((float*)out.data) + out.rows*out.cols;
+			while(p != end) {
+				fscanf(fp,"%i",p);
+				p++;
+			}
+		}
+		fclose(fp);
+	} else {
+		throw exception("Filetype not supported");
+	}
+	return out;
+}
+
+void imwrite_depth(const char* fname, Mat &img, bool binary) {
+	char* ext = PathFindExtension(fname);
+	const char char_dep[] = ".dep";
+	Mat out;
+	if(_strnicmp(ext,char_dep,strlen(char_dep))==0) {
+		FILE *fp;
+		if(binary)
+			fp = fopen(fname,"wb");
+		else
+			fp = fopen(fname,"w");
+		int width = img.cols, height = img.rows; //If messed up, just assume
+		if(binary) {
+			fwrite(&width,sizeof(int),1,fp);
+			fwrite(&height,sizeof(int),1,fp);
+			int *p = (int*)img.data;
+			fwrite(p,sizeof(int),width*height,fp);
+		} else {
+			//fscanf(fp,"%i,%i,",&width,&height);
+			int *p = (int*)img.data, *end = ((int*)img.data) + width*height;
+			while(p != end) {
+				fscanf(fp,"%f",p);
+				p++;
+			}
+		}
+		fclose(fp);
+	} else {
+		throw exception("Filetype not supported");
+	}
+}
+
+void imwrite_float(const char* fname, Mat &img, bool binary) {
+	char* ext = PathFindExtension(fname);
+	const char char_dep[] = ".flt";
+	Mat out;
+	if(_strnicmp(ext,char_dep,strlen(char_dep))==0) {
+		FILE *fp;
+		if(binary)
+			fp = fopen(fname,"wb");
+		else
+			fp = fopen(fname,"w");
+		int width = img.cols, height = img.rows; //If messed up, just assume
+		if(binary) {
+			fwrite(&width,sizeof(int),1,fp);
+			fwrite(&height,sizeof(int),1,fp);
+			float *p = (float*)img.data;
+			fwrite(p,sizeof(float),width*height,fp);
+		} else {
+			//fscanf(fp,"%i,%i,",&width,&height);
+			float *p = (float*)img.data, *end = ((float*)img.data) + width*height;
+			while(p != end) {
+				fscanf(fp,"%f",p);
+				p++;
+			}
+		}
+		fclose(fp);
+	} else {
+		throw exception("Filetype not supported");
+	}
+}
+
 void Classifier::CalculateSIFTFeatures(Mat &img, Mat &mask, Mat &descriptors) {
 	Mat gImg, desc;
 	cvtColor(img, gImg, CV_BGR2GRAY);

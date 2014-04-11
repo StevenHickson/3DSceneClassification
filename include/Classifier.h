@@ -42,9 +42,12 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 #include <Shlwapi.h>
 #include <string.h>
 
-#define NUM_CLUSTERS 500
+#define NUM_CLUSTERS 1000
 
-cv::Mat imread_depth(const char* fname, bool binary);
+cv::Mat imread_depth(const char* fname, bool binary=true);
+cv::Mat imread_float(const char* fname, bool binary=true);
+void imwrite_float(const char* fname, cv::Mat &img, bool binary=true);
+void imwrite_depth(const char* fname, cv::Mat &img, bool binary=true);
 void CreatePointCloudFromRegisteredNYUData(const cv::Mat &img, const cv::Mat &depth, PointCloudBgr *cloud);
 void LoadData(std::string direc, int i, cv::Mat &img, cv::Mat &depth, cv::Mat &label);
 
