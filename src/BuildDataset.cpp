@@ -295,7 +295,7 @@ inline void GetMatFromCloud(const PointCloudInt &cloud, Mat &img) {
 	}
 }
 
-void BuildNYUDataset(string direc) {
+void BuildNYUDataset(string direc, bool matlab) {
 	srand(time(NULL));
 	PointCloudBgr cloud,segment;
 	PointCloudInt labelCloud;
@@ -316,9 +316,9 @@ void BuildNYUDataset(string direc) {
 	}
 	fprintf(fp,",frame,class\n");*/
 	int count = 0;
+	string folder;
 	for(int i = 1; i < 1450; i++) {
-		if(i == c.trainingInds.front()) {
-			c.trainingInds.pop_front();
+		if(matlab || i == c.trainingInds.front()) {
 			cout << i << endl;
 			LoadData(direc,i,img,depth,label);
 			CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
@@ -331,15 +331,21 @@ void BuildNYUDataset(string direc) {
 			tree.ImplementSegmentation(parameters[7]);
 
 			GetFeatureVectors(trainData,c,tree,img,labelCloud,label,i);
-			stringstream num;
-			num << "training/" << count << ".flt";
-			imwrite_float(num.str().c_str(),trainData);
+			if(i == c.trainingInds.front()) {
+				c.trainingInds.pop_front();
+				stringstream num;
+				num << "training/" << count << ".flt";
+				imwrite_float(num.str().c_str(),trainData);
+				count++;
+			}
 			stringstream num2;
-			num2 << "segments/" << count << ".dep";
+			num2 << "training_all/" << i << ".flt";
+			imwrite_float(num2.str().c_str(),trainData);
+			stringstream num3;
+			num3 << "segments/" << i << ".dep";
 			Mat segmentMat;
 			GetMatFromCloud(labelCloud,segmentMat);
-			imwrite_depth(num2.str().c_str(),segmentMat);
-			count++;
+			imwrite_depth(num3.str().c_str(),segmentMat);
 
 			//release stuff
 			segment.clear();

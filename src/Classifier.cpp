@@ -62,15 +62,15 @@ Mat imread_float(const char* fname, bool binary) {
 		if(binary) {
 			fread(&width,sizeof(int),1,fp);
 			fread(&height,sizeof(int),1,fp);
-			out = Mat(height,width,CV_32S);
+			out = Mat(height,width,CV_32F);
 			float *p = (float*)out.data;
 			fread(p,sizeof(float),width*height,fp);
 		} else {
 			//fscanf(fp,"%i,%i,",&width,&height);
-			out = Mat(height,width,CV_32S);
+			out = Mat(height,width,CV_32F);
 			float *p = (float*)out.data, *end = ((float*)out.data) + out.rows*out.cols;
 			while(p != end) {
-				fscanf(fp,"%i",p);
+				fscanf(fp,"%f",p);
 				p++;
 			}
 		}

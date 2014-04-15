@@ -270,8 +270,10 @@ int main (int argc, char** argv) {
 			Classifier c(argv[1]);
 			c.build_vocab();
 		} else if(run == 1)
-			BuildNYUDataset(string(argv[1]));
+			BuildNYUDataset(string(argv[1]),true);
 		else if(run == 2)
+			BuildNYUDataset(string(argv[1]),false);
+		else if(run == 3)
 			BuildRFClassifier(string(argv[1]));
 		else
 			TestRFClassifier(string(argv[1]));
