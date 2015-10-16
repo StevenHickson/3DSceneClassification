@@ -244,18 +244,6 @@ inline void Region3D::AddNode(PointXYZI *in, Vec3b &color, const pcl::PointNorma
 	//}
 }
 
-inline void MinMax(const PointCloudInt &cloud, int *min, int *max) {
-	PointCloudInt::const_iterator p = cloud.begin();
-	*min = *max = int(p->intensity);
-	while(p != cloud.end()) {
-		if(p->intensity < *min)
-			*min = p->intensity;
-		else if(p->intensity> *max)
-			*max = p->intensity;
-		++p;
-	}
-}
-
 void RegionTree3D::Create(const PointCloudBgr &in, PointCloudInt &labels, const pcl::PointCloud<pcl::PointNormal> &normals, int num_segments, int start_label) {
 	this->Release();
 	*this = RegionTree3D(num_segments,in.width,in.height);

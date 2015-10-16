@@ -79,9 +79,9 @@ void iExtractRGBDColorSpace(const PointCloud<PointXYZRGBA>& in, Mat &B, Mat &G, 
 	PointCloudBgr::const_iterator pI = in.begin();
 	Mat_<float>::iterator pB = B.begin<float>(),pG = G.begin<float>(),pR = R.begin<float>(),pD = D.begin<float>();
 	while(pI != in.end()) {
-		*pB = ((float)pI->b - 127.5f) / 127.5f;
-		*pG = ((float)pI->g - 127.5f) / 127.5f;
-		*pR = ((float)pI->r - 127.5f) / 127.5f;
+		*pB = (float)pI->b;
+		*pG = (float)pI->g;
+		*pR = (float)pI->r;
 		*pD = 1000.0f*pI->z;
 		pI++; pB++; pG++; pR++; pD++;
 	}

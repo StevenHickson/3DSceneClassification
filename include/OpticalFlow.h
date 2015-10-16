@@ -54,6 +54,18 @@ typedef pcl::PointCloud<pcl::PointXYZRGBA> PointCloudBgr;
 typedef pcl::PointCloud<pcl::PointXYZI> PointCloudInt;
 typedef pcl::PointCloud<pcl::PointNormal> PointCloudNormal;
 
+inline void MinMax(const PointCloudInt &cloud, int *min, int *max) {
+	PointCloudInt::const_iterator p = cloud.begin();
+	*min = *max = int(p->intensity);
+	while(p != cloud.end()) {
+		if(p->intensity < *min)
+			*min = p->intensity;
+		else if(p->intensity> *max)
+			*max = p->intensity;
+		++p;
+	}
+}
+
 void ComputeOpticalFlow(const cv::Mat &past, const cv::Mat &current, const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr &pastCloud, const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr &currCloud, pcl::PointCloud<pcl::Normal>::Ptr &flow);
 void ComputeOpticalFlowGPU(const cv::Mat &past, const cv::Mat &current, const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr &pastCloud, const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr &currCloud, pcl::PointCloud<pcl::Normal>::Ptr &flow);
 void Downsample2x2(const cv::Mat &in, cv::Mat &out);

@@ -117,4 +117,5 @@ int SHGraphSegment(
 	pcl::PointCloud<pcl::PointXYZI> *out,
 	pcl::PointCloud<pcl::PointXYZRGBA> *out_color);
 
+void random_rgb(cv::Vec3b &c);
 #endif //GRAPH_SEGMENTATION_H

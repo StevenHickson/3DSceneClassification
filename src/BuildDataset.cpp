@@ -1,6 +1,7 @@
 #include "TestVideoSegmentation.h"
+#include "RegionTree.h"
 
-const float parameters[] = { 0.5f,300.0f,100,0.8f,100.0f,100,100,0.1f };
+const float parameters[] = { 2.5f,400.0f,100,0.8f,100.0f,100,100,0.1f };
 
 using namespace std;
 using namespace pcl;
@@ -231,7 +232,7 @@ void GetMatFromRegion(Region3D *reg, Classifier &cl, const PointCloudInt &cloud,
 			regionPoints.push_back(*pK);
 		++pK;
 	}
-	cl.descriptorExtractor->compute(img,regionPoints,desc);
+	cl.bowDescriptorExtractor->compute(img,regionPoints,desc);
 	if(desc.empty())
 		desc = Mat::zeros(1,NUM_CLUSTERS,CV_32F);
 	vector<float>::iterator p = sample.begin();
@@ -295,6 +296,30 @@ inline void GetMatFromCloud(const PointCloudInt &cloud, Mat &img) {
 	}
 }
 
+void PseudoColor(const PointCloudInt &in, Mat &out) {
+		int min, max;
+		MinMax(in, &min, &max);
+		int size = max - min;
+		Vec3b *colors = (Vec3b *) malloc(size*sizeof(Vec3b));
+		Vec3b *pColor = colors;
+		for (int i = min; i < max; i++)
+		{
+			Vec3b color;
+			random_rgb(color);
+			*pColor++ = color;
+		}
+
+		out = Mat::zeros(in.height,in.width,CV_8UC3);
+		PointCloudInt::const_iterator pIn = in.begin();
+		Mat_<Vec3b>::iterator pOut = out.begin<Vec3b>();
+		while(pIn != in.end()) {
+			*pOut = colors[int(pIn->intensity) - min];
+			pIn++;
+			pOut++;
+		}
+		free(colors);
+	}
+
 void BuildNYUDataset(string direc, bool matlab) {
 	srand(time(NULL));
 	PointCloudBgr cloud,segment;
@@ -343,8 +368,11 @@ void BuildNYUDataset(string direc, bool matlab) {
 			imwrite_float(num2.str().c_str(),trainData);
 			stringstream num3;
 			num3 << "segments/" << i << ".dep";
-			Mat segmentMat;
+			Mat segmentMat, segmentMatColor;
 			GetMatFromCloud(labelCloud,segmentMat);
+			//PseudoColor(labelCloud,segmentMatColor);
+			//imshow("window",segmentMatColor);
+			//waitKey();
 			imwrite_depth(num3.str().c_str(),segmentMat);
 
 			//release stuff
@@ -464,7 +492,7 @@ void TestRFClassifier(string direc) {
 			vector<Region3D*>::const_iterator p = tree.top_regions.begin();
 			for(int i = 0; i < tree.top_regions.size(); i++, p++) {
 				vector<float> sample;
-				GetMatFromRegion(*p,c,labelCloud,kp,img,sample,feature_len);
+				GetMatFromRegion(*p,c,labelCloud,kp,gImg,sample,feature_len);
 				Mat sampleMat = Mat(sample);
 				result = Round(rtree->predict(sampleMat));
 				int id = GetClass(labelCloud,label,(*p)->m_centroid3D.intensity);
