@@ -236,9 +236,9 @@ void Classifier::LoadTrainingInd() {
 	fclose(fp);
 }
 
-void Classifier::LoadClass4Map() {
+void Classifier::LoadClassMap(string classfile) {
 	int length, i;
-	FILE *fp = fopen("class4map.txt","rb");
+	FILE *fp = fopen(classfile.c_str(),"rb");
 	if(fp == NULL)
 		throw exception("Couldn't open class mapping file");
 	fread(&length,sizeof(int),1,fp);

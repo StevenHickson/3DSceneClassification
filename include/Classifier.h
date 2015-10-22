@@ -84,7 +84,7 @@ public:
 	void CalculateBOWFeatures(cv::Mat &img, cv::Mat &mask, cv::Mat &descriptors);
 	void LoadTestingInd();
 	void LoadTrainingInd();
-	void LoadClass4Map();
+	void LoadClassMap(std::string classfile);
 
 };
 

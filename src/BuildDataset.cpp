@@ -1,11 +1,12 @@
 #include "TestVideoSegmentation.h"
 #include "RegionTree.h"
 
-const float parameters[] = { 2.5f,400.0f,100,0.8f,100.0f,100,100,0.1f };
-
 using namespace std;
 using namespace pcl;
 using namespace cv;
+
+const float parameters[] = { 2.5f,500.0f,500,0.8f,400.0f,400,100,0.25f };
+const string mapFile = "class4map.txt";
 
 void CreatePointCloudFromRegisteredNYUData(const Mat &img, const Mat &depth, PointCloudBgr *cloud) {
 	//assert(!img.IsNull() && !depth.IsNull());
@@ -69,7 +70,7 @@ void CreateLabeledCloudFromNYUPointCloud(const PointCloudBgr &cloud, const Mat &
 
 inline void EstimateNormals(const PointCloud<PointXYZRGBA>::ConstPtr &cloud, PointCloud<PointNormal>::Ptr &normals, bool fill) {
 	pcl::IntegralImageNormalEstimation<pcl::PointXYZRGBA, pcl::PointNormal> ne;
-	ne.setNormalEstimationMethod (ne.AVERAGE_3D_GRADIENT);
+	ne.setNormalEstimationMethod (ne.COVARIANCE_MATRIX);
 	ne.setMaxDepthChangeFactor(0.02f);
 	ne.setNormalSmoothingSize(10.0f);
 	ne.setInputCloud(cloud);
@@ -296,29 +297,43 @@ inline void GetMatFromCloud(const PointCloudInt &cloud, Mat &img) {
 	}
 }
 
-void PseudoColor(const PointCloudInt &in, Mat &out) {
-		int min, max;
-		MinMax(in, &min, &max);
-		int size = max - min;
-		Vec3b *colors = (Vec3b *) malloc(size*sizeof(Vec3b));
-		Vec3b *pColor = colors;
-		for (int i = min; i < max; i++)
-		{
-			Vec3b color;
-			random_rgb(color);
-			*pColor++ = color;
-		}
-
-		out = Mat::zeros(in.height,in.width,CV_8UC3);
-		PointCloudInt::const_iterator pIn = in.begin();
-		Mat_<Vec3b>::iterator pOut = out.begin<Vec3b>();
-		while(pIn != in.end()) {
-			*pOut = colors[int(pIn->intensity) - min];
-			pIn++;
-			pOut++;
-		}
-		free(colors);
+inline void GetMatFromCloud(const PointCloudNormal &cloud, Mat &img) {
+	img = Mat(cloud.height,cloud.width,CV_8UC3);
+	Mat_<Vec3b>::iterator pI = img.begin<Vec3b>();
+	PointCloudNormal::const_iterator pC = cloud.begin();
+	while(pC != cloud.end()) {
+		//scale from -1 to 1
+		int red = Round((pC->normal_x + 1) * 127.5f);
+		int green = Round((pC->normal_y + 1) * 127.5f);
+		int blue = Round((pC->normal_z + 1) * 127.5f);
+		*pI = Vec3b(red,green,blue);
+		++pI; ++pC;
 	}
+}
+
+void PseudoColor(const PointCloudInt &in, Mat &out) {
+	int min, max;
+	MinMax(in, &min, &max);
+	int size = max - min;
+	Vec3b *colors = (Vec3b *) malloc(size*sizeof(Vec3b));
+	Vec3b *pColor = colors;
+	for (int i = min; i < max; i++)
+	{
+		Vec3b color;
+		random_rgb(color);
+		*pColor++ = color;
+	}
+
+	out = Mat::zeros(in.height,in.width,CV_8UC3);
+	PointCloudInt::const_iterator pIn = in.begin();
+	Mat_<Vec3b>::iterator pOut = out.begin<Vec3b>();
+	while(pIn != in.end()) {
+		*pOut = colors[int(pIn->intensity) - min];
+		pIn++;
+		pOut++;
+	}
+	free(colors);
+}
 
 void BuildNYUDataset(string direc, bool matlab) {
 	srand(time(NULL));
@@ -349,7 +364,7 @@ void BuildNYUDataset(string direc, bool matlab) {
 			CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
 			//CreateLabeledCloudFromNYUPointCloud(cloud,label,&labelCloud);
 			int segments = SHGraphSegment(cloud,parameters[0],parameters[1],parameters[2],parameters[3],parameters[4],parameters[5],&labelCloud,&segment);
-			EstimateNormals(cloud.makeShared(),normals,false);
+			EstimateNormals(cloud.makeShared(),normals,true);
 			RegionTree3D tree;
 			tree.Create(cloud,labelCloud,*normals,segments,0);
 			tree.PropagateRegionHierarchy(parameters[6]);
@@ -396,7 +411,7 @@ void BuildNYUDataset(string direc, bool matlab) {
 
 void BuildRFClassifier(string direc) {
 	Classifier c(direc);
-	c.LoadClass4Map();
+	c.LoadClassMap(mapFile);
 	FileStorage fs("count.yml", FileStorage::READ);
 	int i,count;
 	fs["count"] >> count;
@@ -458,7 +473,7 @@ void TestRFClassifier(string direc) {
 	//open training file
 	Classifier c(direc);
 	c.LoadTestingInd();
-	c.LoadClass4Map();
+	c.LoadClassMap(mapFile);
 	c.load_vocab();
 	CvRTrees* rtree = new CvRTrees;
 	rtree->load("rf.xml");
@@ -578,4 +593,166 @@ void TestRFClassifier(string direc) {
 	cout << "Class Accuracy: " << (result / tot) << endl;
 
 	delete rtree;
+}
+
+void GenerateSegmentMask(const PointCloudInt &labelCloud, int id, Mat &mask) {
+	//Here we are going to generate the mask of the segment
+	mask = Mat::zeros(Size(labelCloud.width,labelCloud.height), CV_8UC1);
+	PointCloudInt::const_iterator p = labelCloud.begin();
+	Mat_<uchar>::iterator pO = mask.begin<uchar>();
+	while(p != labelCloud.end()) {
+		if(p->intensity == id)
+			*pO = 255;
+		++p; ++pO;
+	}
+	//Here we are going to grow the mask
+	int dilation_size = 5;
+	Mat element = getStructuringElement( MORPH_RECT,
+		Size( 2*dilation_size + 1, 2*dilation_size+1 ),
+		Point( dilation_size, dilation_size ) );
+	dilate(mask,mask,element);
+}
+
+//Let's template this
+template<typename T>
+void GenerateImageFromMask(const Mat &in, const Mat &mask, Mat &segment) {
+	segment = Mat::zeros(in.size(), in.type());
+	Mat_<uchar>::const_iterator p = mask.begin<uchar>();
+	Mat_<T>::const_iterator pC = in.begin<T>();
+	Mat_<T>::iterator pO = segment.begin<T>();
+	while(p != mask.end<uchar>()) {
+		if(*p == 255)
+			*pO = *pC;
+		++p; ++pC; ++pO;
+	}
+}
+
+void GenerateLabelMask(const PointCloudInt &labelCloud, map<int,int> &idLookup, Mat &out) {
+	//Here we are going to generate the mask of the segment
+	out = Mat::zeros(Size(labelCloud.width,labelCloud.height), CV_32S);
+	PointCloudInt::const_iterator p = labelCloud.begin();
+	Mat_<int>::iterator pO = out.begin<int>();
+	while(p != labelCloud.end()) {
+		*pO = idLookup[p->intensity];
+		++p; ++pO;
+	}
+}
+
+void BuildNYUDatasetForCaffe(string direc) {
+	srand(time(NULL));
+	PointCloudBgr cloud,segment;
+	PointCloudInt labelCloud;
+	Mat img, depth, label, trainData;
+	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > normals(new pcl::PointCloud<pcl::PointNormal>);
+	Classifier c(direc);
+	c.LoadTrainingInd();
+	c.LoadClassMap(mapFile);
+
+	//Open the training and testing files
+	FILE *fpTraining = fopen("training.txt","w");
+	if(fpTraining == NULL)
+		throw exception("Couldn't open training file");
+	FILE *fpTesting = fopen("testing.txt","w");
+	if(fpTesting == NULL)
+		throw exception("Couldn't open Testing file");
+
+	int count = 0;
+	string folder;
+	for(int i = 1; i < 1450; i++) {
+		cout << i << endl;
+		LoadData(direc,i,img,depth,label);
+		CreatePointCloudFromRegisteredNYUData(img,depth,&cloud);
+		//CreateLabeledCloudFromNYUPointCloud(cloud,label,&labelCloud);
+		int segments = SHGraphSegment(cloud,parameters[0],parameters[1],parameters[2],parameters[3],parameters[4],parameters[5],&labelCloud,&segment);
+		EstimateNormals(cloud.makeShared(),normals,true);
+		RegionTree3D tree;
+		tree.Create(cloud,labelCloud,*normals,segments,0);
+		tree.PropagateRegionHierarchy(parameters[6]);
+		tree.ImplementSegmentation(parameters[7]);
+
+		Mat segmentMat, segmentMatColor;
+		GetMatFromCloud(labelCloud,segmentMat);
+		PseudoColor(labelCloud,segmentMatColor);
+
+		Mat normalsMat;
+		GetMatFromCloud(*normals,normalsMat);
+
+		//let's figure out if we are testing or training
+		bool training = false;
+		if(i == c.trainingInds.front()) {
+			c.trainingInds.pop_front();
+			training = true;
+		}
+
+		//Make a lookup for the old segment ids to new segment names
+		std::map<int,int> idLookup;
+
+		vector<Region3D*>::const_iterator p = tree.top_regions.begin();
+		for(int i = 0; i < tree.top_regions.size(); i++, p++) {
+			//Set up map
+			idLookup[(*p)->m_centroid3D.intensity] = count;
+
+			//Get id for label
+			int id = GetClass(labelCloud,label,(*p)->m_centroid3D.intensity);
+			int mappedId = c.classMap[id];
+
+			//Create segment image for training and save
+			Mat mask, segment;
+			GenerateSegmentMask(labelCloud, (*p)->m_centroid3D.intensity, mask);
+
+			//Get and save segmented image
+			GenerateImageFromMask<Vec3b>(img,mask,segment);
+			stringstream imgFileName;
+			imgFileName << "segments/" << count << ".png";
+			imwrite(imgFileName.str(),segment);
+
+			//Get and save segmented depth
+			GenerateImageFromMask<int>(depth,mask,segment);
+			stringstream depthFileName;
+			depthFileName << "segments_depth/" << count << ".png";
+			Mat segmentOut;
+			segment.convertTo(segmentOut,CV_16UC1);
+			imwrite(depthFileName.str(),segmentOut);
+
+			//Get and save segmented normals
+			GenerateImageFromMask<Vec3b>(normalsMat,mask,segment);
+			stringstream normalsFileName;
+			normalsFileName << "segments_normals/" << count << ".png";
+			imwrite(normalsFileName.str(),segment);
+
+			//Write filename and class to training file
+			if(training) {
+				//I'm training
+				fprintf(fpTraining,"%s, %d\n",imgFileName.str().c_str(), mappedId);
+			} else {
+				//I'm testing
+				fprintf(fpTesting,"%s, %d\n",imgFileName.str().c_str(), mappedId);
+			}
+
+			++count;
+		}
+
+		//Now let's use the map to generate a superpixel label image
+		Mat spLabels;
+		GenerateLabelMask(labelCloud,idLookup,spLabels);
+		stringstream labelsFileName;
+		labelsFileName << "labels/" << i << ".dep";
+		imwrite_depth(labelsFileName.str().c_str(),spLabels);
+
+		//release stuff
+		spLabels.release();
+		segmentMat.release();
+		segment.clear();
+		cloud.clear();
+		labelCloud.clear();
+		img.release();
+		depth.release();
+		label.release();
+		normals->clear();
+		tree.top_regions.clear();
+		tree.Release();
+	}
+
+	fclose(fpTraining);
+	fclose(fpTesting);
 }
