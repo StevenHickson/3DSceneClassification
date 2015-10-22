@@ -256,12 +256,12 @@ void LoadData(string direc, int i, Mat &img, Mat &depth, Mat &label) {
 	stringstream num;
 	num << i;
 	//I should crop everything some number of pixels
-	//int crop = 7;
-	//Rect roi = Rect(crop,crop,639 - 2*crop, 479 - 2*crop);
+	int crop = 7;
 	img = imread(string(direc + "rgb\\" + num.str() + ".bmp"));
-	//img = img(roi);
+	Rect roi = Rect(crop,crop,img.cols - 2*crop, img.rows - 2*crop);
+	img = img(roi);
 	depth = imread_depth(string(direc + "depth\\" + num.str() + ".dep").c_str(),true);
-	//depth = depth(roi);
+	depth = depth(roi);
 	label = imread_depth(string(direc + "labels\\" + num.str() + ".dep").c_str(),true);
-	//label = label(roi);
+	label = label(roi);
 }

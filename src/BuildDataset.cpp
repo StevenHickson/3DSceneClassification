@@ -16,8 +16,8 @@ void CreatePointCloudFromRegisteredNYUData(const Mat &img, const Mat &depth, Poi
 		cloud->clear();
 	}
 	cloud->header.frame_id =  "/microsoft_rgb_optical_frame";
-	cloud->height = 480;
-	cloud->width = 640;
+	cloud->height = img.rows;
+	cloud->width = img.cols;
 	cloud->is_dense = true;
 	cloud->points.resize (cloud->height * cloud->width);
 	PointCloud<PointXYZRGBA>::iterator pCloud = cloud->begin();
@@ -616,7 +616,7 @@ void GenerateSegmentMask(const PointCloudInt &labelCloud, int id, Mat &mask) {
 
 void GenerateSegmentRegion(const PointCloudInt &labelCloud, int id, Rect &roi) {
 	//lets get the min and max x and y
-	int minX = 640, minY = 479, maxX = 0, maxY = 0;
+	int minX = labelCloud.width - 1, minY = labelCloud.height - 1, maxX = 0, maxY = 0;
 	PointCloudInt::const_iterator p = labelCloud.begin();
 	for(int j = 0; j < labelCloud.height; j++) {
 		for(int i = 0; i < labelCloud.width; i++) {
@@ -683,6 +683,7 @@ void BuildNYUDatasetForCaffe(string direc, bool window) {
 	Mat img, depth, label, trainData;
 	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > normals(new pcl::PointCloud<pcl::PointNormal>);
 	Classifier c(direc);
+	c.load_vocab();
 	c.LoadTrainingInd();
 	c.LoadClassMap(mapFile);
 
@@ -694,7 +695,7 @@ void BuildNYUDatasetForCaffe(string direc, bool window) {
 	if(fpTesting == NULL)
 		throw exception("Couldn't open Testing file");
 
-	int count = 0;
+	int count = 0, training_count = 0;
 	string folder;
 	for(int i = 1; i < 1450; i++) {
 		cout << i << endl;
@@ -717,10 +718,22 @@ void BuildNYUDatasetForCaffe(string direc, bool window) {
 
 		//let's figure out if we are testing or training
 		bool training = false;
+
+		GetFeatureVectors(trainData,c,tree,img,labelCloud,label,i);
 		if(i == c.trainingInds.front()) {
 			c.trainingInds.pop_front();
 			training = true;
+			stringstream num;
+			num << "training/" << training_count << ".flt";
+			imwrite_float(num.str().c_str(),trainData);
+			training_count++;
 		}
+		stringstream num2;
+		num2 << "training_all/" << i << ".flt";
+		imwrite_float(num2.str().c_str(),trainData);
+		stringstream num3;
+		num3 << "segment_labels/" << i << ".dep";
+		imwrite_depth(num3.str().c_str(),segmentMat);
 
 		//Make a lookup for the old segment ids to new segment names
 		std::map<int,int> idLookup;
