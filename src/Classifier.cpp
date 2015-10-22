@@ -255,7 +255,13 @@ void Classifier::LoadClassMap(string classfile) {
 void LoadData(string direc, int i, Mat &img, Mat &depth, Mat &label) {
 	stringstream num;
 	num << i;
+	//I should crop everything some number of pixels
+	//int crop = 7;
+	//Rect roi = Rect(crop,crop,639 - 2*crop, 479 - 2*crop);
 	img = imread(string(direc + "rgb\\" + num.str() + ".bmp"));
+	//img = img(roi);
 	depth = imread_depth(string(direc + "depth\\" + num.str() + ".dep").c_str(),true);
+	//depth = depth(roi);
 	label = imread_depth(string(direc + "labels\\" + num.str() + ".dep").c_str(),true);
+	//label = label(roi);
 }

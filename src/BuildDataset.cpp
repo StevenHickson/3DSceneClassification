@@ -7,6 +7,7 @@ using namespace cv;
 
 const float parameters[] = { 2.5f,500.0f,500,0.8f,400.0f,400,100,0.25f };
 const string mapFile = "class4map.txt";
+const int EXTRA_BORDER = 13;
 
 void CreatePointCloudFromRegisteredNYUData(const Mat &img, const Mat &depth, PointCloudBgr *cloud) {
 	//assert(!img.IsNull() && !depth.IsNull());
@@ -613,6 +614,37 @@ void GenerateSegmentMask(const PointCloudInt &labelCloud, int id, Mat &mask) {
 	dilate(mask,mask,element);
 }
 
+void GenerateSegmentRegion(const PointCloudInt &labelCloud, int id, Rect &roi) {
+	//lets get the min and max x and y
+	int minX = 640, minY = 479, maxX = 0, maxY = 0;
+	PointCloudInt::const_iterator p = labelCloud.begin();
+	for(int j = 0; j < labelCloud.height; j++) {
+		for(int i = 0; i < labelCloud.width; i++) {
+			if(p->intensity == id) {
+				if(i > maxX)
+					maxX = i;
+				if(i < minX)
+					minX = i;
+				if(j > maxY)
+					maxY = j;
+				if(j < minY)
+					minY = j;
+			}
+			++p;
+		}
+	}
+	minX -= EXTRA_BORDER;
+	minY -= EXTRA_BORDER;
+	maxX += EXTRA_BORDER;
+	maxY += EXTRA_BORDER;
+	if(minX < 0)
+		minX = 0;
+	roi.x = Clamp<int>(minX,0,labelCloud.width - 1);
+	roi.y = Clamp<int>(minY,0,labelCloud.height - 1);
+	roi.width = Clamp<int>(maxX,0,labelCloud.width - 1) - roi.x;
+	roi.height = Clamp<int>(maxY,0,labelCloud.height - 1) - roi.y;
+}
+
 //Let's template this
 template<typename T>
 void GenerateImageFromMask(const Mat &in, const Mat &mask, Mat &segment) {
@@ -627,6 +659,12 @@ void GenerateImageFromMask(const Mat &in, const Mat &mask, Mat &segment) {
 	}
 }
 
+template<typename T>
+void GenerateImageFromRegion(const Mat &in, const Rect &roi, Mat &segment) {
+	//segment = Mat::zeros(Size(roi.width, roi.height) , in.type());
+	segment = in(roi).clone();
+}
+
 void GenerateLabelMask(const PointCloudInt &labelCloud, map<int,int> &idLookup, Mat &out) {
 	//Here we are going to generate the mask of the segment
 	out = Mat::zeros(Size(labelCloud.width,labelCloud.height), CV_32S);
@@ -638,7 +676,7 @@ void GenerateLabelMask(const PointCloudInt &labelCloud, map<int,int> &idLookup, 
 	}
 }
 
-void BuildNYUDatasetForCaffe(string direc) {
+void BuildNYUDatasetForCaffe(string direc, bool window) {
 	srand(time(NULL));
 	PointCloudBgr cloud,segment;
 	PointCloudInt labelCloud;
@@ -698,16 +736,26 @@ void BuildNYUDatasetForCaffe(string direc) {
 
 			//Create segment image for training and save
 			Mat mask, segment;
-			GenerateSegmentMask(labelCloud, (*p)->m_centroid3D.intensity, mask);
+			Rect roi;
+			if(window)
+				GenerateSegmentRegion(labelCloud, (*p)->m_centroid3D.intensity, roi);
+			else
+				GenerateSegmentMask(labelCloud, (*p)->m_centroid3D.intensity, mask);
 
 			//Get and save segmented image
-			GenerateImageFromMask<Vec3b>(img,mask,segment);
+			if(window)
+				GenerateImageFromRegion<Vec3b>(img,roi,segment);
+			else
+				GenerateImageFromMask<Vec3b>(img,mask,segment);
 			stringstream imgFileName;
 			imgFileName << "segments/" << count << ".png";
 			imwrite(imgFileName.str(),segment);
 
 			//Get and save segmented depth
-			GenerateImageFromMask<int>(depth,mask,segment);
+			if(window)
+				GenerateImageFromRegion<int>(depth,roi,segment);
+			else
+				GenerateImageFromMask<int>(depth,mask,segment);
 			stringstream depthFileName;
 			depthFileName << "segments_depth/" << count << ".png";
 			Mat segmentOut;
@@ -715,7 +763,10 @@ void BuildNYUDatasetForCaffe(string direc) {
 			imwrite(depthFileName.str(),segmentOut);
 
 			//Get and save segmented normals
-			GenerateImageFromMask<Vec3b>(normalsMat,mask,segment);
+			if(window)
+				GenerateImageFromRegion<Vec3b>(normalsMat,roi,segment);
+			else
+				GenerateImageFromMask<Vec3b>(normalsMat,mask,segment);
 			stringstream normalsFileName;
 			normalsFileName << "segments_normals/" << count << ".png";
 			imwrite(normalsFileName.str(),segment);

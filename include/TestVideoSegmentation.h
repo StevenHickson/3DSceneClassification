@@ -17,5 +17,5 @@
 inline void EstimateNormals(const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr &cloud, pcl::PointCloud<pcl::PointNormal>::Ptr &normals);
 void BuildRFClassifier(std::string direc);
 void BuildNYUDataset(std::string direc, bool matlab = false);
-void BuildNYUDatasetForCaffe(std::string direc);
+void BuildNYUDatasetForCaffe(std::string direc, bool window);
 void TestRFClassifier(std::string direc);

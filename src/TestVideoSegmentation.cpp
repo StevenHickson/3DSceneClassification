@@ -277,8 +277,10 @@ int main (int argc, char** argv) {
 			BuildRFClassifier(string(argv[1]));
 		else if(run == 4)
 			TestRFClassifier(string(argv[1]));
+		else if(run == 5)
+			BuildNYUDatasetForCaffe(string(argv[1]), false);
 		else
-			BuildNYUDatasetForCaffe(string(argv[1]));
+			BuildNYUDatasetForCaffe(string(argv[1]), true);
 	} catch (pcl::PCLException e) {
 		cout << e.detailedMessage() << endl;
 	} catch (std::exception &e) {
